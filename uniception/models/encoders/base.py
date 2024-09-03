@@ -2,9 +2,21 @@
 # Base Encoder Class for UniCeption
 # --------------------------------------------------------
 import torch.nn as nn
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
+from typing import List, Optional
 
 from uniception.models.encoders.image_normalizations import *
+
+
+@dataclass
+class EncoderInput:
+    data_norm_type: str
+    # Add other fields that are required by the specific implementation of the encoder.
+
+
+@dataclass
+class EncoderOutput:
+    pass
 
 
 class UniCeptionEncoderBase(nn.Module):
@@ -28,19 +40,19 @@ class UniCeptionEncoderBase(nn.Module):
 
     def forward(
         self,
-        encoder_input: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        encoder_input: EncoderInput,
+    ) -> EncoderOutput:
         """
         Forward interface for the UniCeption encoders.
 
         We expect the "data_norm_type" field to be present in the encoder_input to check for normalization type.
 
         Args:
-            batch (Dict[str, Any]): Input to the encoder. We expect the following fields: "data_norm_type: str".
+            encoder_input (EncoderInput): Input to the encoder. We expect the following fields: "data_norm_type: str".
                 This is also includes the other fields that are required by the specific implementation of the encoder.
 
         Returns:
-            Dict[str, Any]: Output of the encoder. This includes the output of the encoder.
+            EncoderOutput: Output of the encoder.
         """
 
         raise NotImplementedError
@@ -77,16 +89,15 @@ class UniCeptionViTEncoderBase(UniCeptionEncoderBase):
         self.patch_size = patch_size
 
 
-class IntermediateFeatureReturner():
-    
-    def __init__(self, num_intermediate_layers : int, selected_layers : List[int]):
+class IntermediateFeatureReturner:
+    def __init__(self, num_intermediate_layers: int, selected_layers: List[int]):
         """
         Class to return intermediate features from the encoder.
         """
         self.num_intermediate_layers: int = num_intermediate_layers
-        self.selected_layers : List[int] = selected_layers
+        self.selected_layers: List[int] = selected_layers
 
 
 if __name__ == "__main__":
     dummy_model = UniCeptionEncoderBase(name="name", data_norm_type="norm")
-    print("Dummy Base Endcoder created successfully!")
+    print("Dummy Base Encoder created successfully!")

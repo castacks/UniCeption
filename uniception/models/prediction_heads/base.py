@@ -2,9 +2,18 @@
 # Base Prediction Head Class for UniCeption
 # --------------------------------------------------------
 import torch.nn as nn
+from dataclasses import dataclass
 from typing import List, Optional
 
-from .image_normalizations import *
+
+@dataclass
+class PredictionHeadInput:
+    pass
+
+
+@dataclass
+class PredictionHeadOutput:
+    pass
 
 
 class UniCeptionPredictionHeadBase(nn.Module):
@@ -22,18 +31,17 @@ class UniCeptionPredictionHeadBase(nn.Module):
 
     def forward(
         self,
-        head_input: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        head_input: PredictionHeadInput,
+    ) -> PredictionHeadOutput:
         """
         Forward interface for the UniCeption prediction heads.
 
 
         Args:
-            batch (Dict[str, Any]): Input to the prediction head. 
+            head_input (PredictionHeadInput): Input to the prediction head.
 
         Returns:
-            Dict[str, Any]: Output of the prediction head.
+            head_output (PredictionHeadOutput): Output of the prediction head.
         """
 
         raise NotImplementedError
-
