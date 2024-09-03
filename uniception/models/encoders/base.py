@@ -2,13 +2,14 @@
 # Base Encoder Class for UniCeption
 # --------------------------------------------------------
 import torch.nn as nn
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
-from .image_normalizations import *
+from uniception.models.encoders.image_normalizations import *
 
 
 class UniCeptionEncoderBase(nn.Module):
     def __init__(
+        self,
         name: str,
         data_norm_type: str,
         size: Optional[str] = None,
@@ -84,3 +85,8 @@ class IntermediateFeatureReturner():
         """
         self.num_intermediate_layers: int = num_intermediate_layers
         self.selected_layers : List[int] = selected_layers
+
+
+if __name__ == "__main__":
+    dummy_model = UniCeptionEncoderBase(name="name", data_norm_type="norm")
+    print("Dummy Base Endcoder created successfully!")
