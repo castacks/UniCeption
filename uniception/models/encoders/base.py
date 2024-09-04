@@ -2,7 +2,9 @@
 # Base Encoder Class for UniCeption
 # --------------------------------------------------------
 import torch.nn as nn
+from jaxtyping import Float
 from dataclasses import dataclass
+from torch import Tensor
 from typing import List, Optional
 
 from uniception.models.encoders.image_normalizations import *
@@ -31,7 +33,7 @@ class UniCeptionEncoderBase(nn.Module):
         """
         Base class for all encoders in UniCeption.
         """
-        super(UniCeptionEncoderBase, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         self.name: str = name
         self.size: Optional[str] = size
@@ -74,6 +76,16 @@ class UniCeptionEncoderBase(nn.Module):
         ), f"Input normalization type {data_norm_type} does not match the encoder's normalization type {self.data_norm_type}."
 
 
+@dataclass
+class ViTEncoderInput(EncoderInput):
+    image: Float[Tensor, "batch channel height width"]
+
+
+@dataclass
+class ViTEncoderOutput(EncoderOutput):
+    features: Float[Tensor, "batch enc_embed_dim feat_height feat_width"]
+
+
 class UniCeptionViTEncoderBase(UniCeptionEncoderBase):
     def __init__(
         self,
@@ -84,7 +96,7 @@ class UniCeptionViTEncoderBase(UniCeptionEncoderBase):
         """
         Base class for all Vision Transformer encoders in UniCeption.
         """
-        super(UniCeptionEncoderBase, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         self.patch_size = patch_size
 
@@ -100,4 +112,5 @@ class IntermediateFeatureReturner:
 
 if __name__ == "__main__":
     dummy_model = UniCeptionEncoderBase(name="name", data_norm_type="norm")
-    print("Dummy Base Encoder created successfully!")
+    dummy_vit_model = UniCeptionViTEncoderBase(name="name", data_norm_type="norm", patch_size=16)
+    print("Dummy Base Encoders created successfully!")

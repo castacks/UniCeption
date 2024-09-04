@@ -25,7 +25,7 @@ class UniCeptionPredictionHeadBase(nn.Module):
         """
         Base class for all prediction heads in UniCeption.
         """
-        super(UniCeptionPredictionHeadBase, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         self.name: str = name
 
