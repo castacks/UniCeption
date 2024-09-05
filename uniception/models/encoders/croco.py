@@ -98,7 +98,16 @@ class CroCoEncoder(UniCeptionViTEncoderBase):
         # Load the pretrained CroCo checkpoint if provided
         if pretrained_checkpoint_path:
             print(f"Loading pretrained CroCo checkpoint from {pretrained_checkpoint_path}")
-            print(self.load_state_dict(torch.load(pretrained_checkpoint_path, weights_only=True)))
+            ckpt = torch.load(pretrained_checkpoint_path, weights_only=False)
+            ckpt_data_norm_type = ckpt["data_norm_type"]
+            ckpt_patch_embed_cls_opts = ckpt["patch_embed_cls"]
+            print(self.load_state_dict(ckpt["model"]))
+            assert (
+                data_norm_type == ckpt_data_norm_type
+            ), f"Data normalization type {data_norm_type} does not match the checkpoint {ckpt_data_norm_type}."
+            assert (
+                patch_embed_cls in ckpt_patch_embed_cls_opts
+            ), f"Patch embedding class {patch_embed_cls} does not match the checkpoint options {ckpt_patch_embed_cls_opts}."
         else:
             print("No pretrained checkpoint provided. Randomly initializing the CroCo encoder.")
 
@@ -173,13 +182,16 @@ if __name__ == "__main__":
     # Forward pass the dummy input through the CroCo Encoder
     encoder_output = croco_encoder(encoder_input)
 
+    # Init a dummy input dataclass for 224 resolution
+    encoder_input = ViTEncoderInput(image=torch.randn(1, 3, 224, 224), data_norm_type="dust3r")
+
     # Init the pre-trained DUSt3R CroCo Encoder
     pretrained_checkpoint_path = (
         "/ocean/projects/cis220039p/nkeetha/code/UniCeption/checkpoints/CroCo_Encoder_224_DUSt3R_linear.pth"
     )
     dust3r_encoder = CroCoEncoder(
         name="dust3r_224",
-        data_norm_type="croco",
+        data_norm_type="dust3r",
         pretrained_checkpoint_path=pretrained_checkpoint_path,
         patch_embed_cls="PatchEmbedDust3R",
     )
@@ -188,7 +200,7 @@ if __name__ == "__main__":
     encoder_output = dust3r_encoder(encoder_input)
 
     # Init a dummy input dataclass for 512 resolution
-    encoder_input = ViTEncoderInput(image=torch.randn(1, 3, 384, 512), data_norm_type="croco")
+    encoder_input = ViTEncoderInput(image=torch.randn(1, 3, 384, 512), data_norm_type="dust3r")
 
     # Init the pre-trained DUSt3R 512 linear CroCo Encoder
     pretrained_checkpoint_path = (
@@ -196,7 +208,7 @@ if __name__ == "__main__":
     )
     dust3r_encoder_512 = CroCoEncoder(
         name="dust3r_512",
-        data_norm_type="croco",
+        data_norm_type="dust3r",
         pretrained_checkpoint_path=pretrained_checkpoint_path,
         patch_embed_cls="ManyAR_PatchEmbed",
         img_size=(512, 512),
@@ -211,7 +223,7 @@ if __name__ == "__main__":
     )
     dust3r_encoder_512_dpt = CroCoEncoder(
         name="dust3r_512_dpt",
-        data_norm_type="croco",
+        data_norm_type="dust3r",
         pretrained_checkpoint_path=pretrained_checkpoint_path,
         patch_embed_cls="ManyAR_PatchEmbed",
         img_size=(512, 512),
@@ -226,7 +238,7 @@ if __name__ == "__main__":
     )
     mast3r_encoder_512 = CroCoEncoder(
         name="mast3r_512",
-        data_norm_type="croco",
+        data_norm_type="dust3r",
         pretrained_checkpoint_path=pretrained_checkpoint_path,
         patch_embed_cls="ManyAR_PatchEmbed",
         img_size=(512, 512),
@@ -235,4 +247,4 @@ if __name__ == "__main__":
     # Forward pass the dummy input through the MASt3R 512 CroCo Encoder
     encoder_output = mast3r_encoder_512(encoder_input)
 
-    print("All CroCo Encoders initialized successfully!")
+    print("All CroCo & DUSt3R Encoders have been initialized successfully!")

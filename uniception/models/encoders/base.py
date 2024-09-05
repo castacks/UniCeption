@@ -7,8 +7,6 @@ from dataclasses import dataclass
 from torch import Tensor
 from typing import List, Optional
 
-from uniception.models.encoders.image_normalizations import *
-
 
 @dataclass
 class EncoderInput:
@@ -114,4 +112,3 @@ if __name__ == "__main__":
     dummy_model = UniCeptionEncoderBase(name="name", data_norm_type="norm")
     dummy_vit_model = UniCeptionViTEncoderBase(name="name", data_norm_type="norm", patch_size=16)
     print("Dummy Base Encoders created successfully!")
-
