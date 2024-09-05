@@ -29,11 +29,10 @@ class UniCeptionPredictionHeadBase(nn.Module):
 
 
         Args:
-            batch (Dict[str, Any]): Input to the prediction head. 
+            batch (Dict[str, Any]): Input to the prediction head.
 
         Returns:
             Dict[str, Any]: Output of the prediction head.
         """
 
         raise NotImplementedError
-
