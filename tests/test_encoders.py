@@ -25,14 +25,10 @@ class TestEncoders(unittest.TestCase):
 
         self.norm_types = IMAGE_NORMALIZATION_DICT.keys()
 
-        self.encoders = [
-            "croco", "dust3r_224", "dust3r_512", "dust3r_512_dpt", "mast3r_512"
-        ]
+        self.encoders = ["croco", "dust3r_224", "dust3r_512", "dust3r_512_dpt", "mast3r_512"]
 
-        self.encoder_configs = [
-            {}, {}, {}, {}, {}
-        ]
-    
+        self.encoder_configs = [{}, {}, {}, {}, {}]
+
     def inference_encoder(self, encoder, input):
         return encoder(input)
 
@@ -71,12 +67,11 @@ class TestEncoders(unittest.TestCase):
 
         img = self._get_example_input(image_size, encoder.data_norm_type)
         # input and output of the encoder
-        encoder_input : ViTEncoderInput = ViTEncoderInput(
+        encoder_input: ViTEncoderInput = ViTEncoderInput(
             data_norm_type=encoder.data_norm_type,
             image=img,
         )
 
-        # TODO: Add the encoder forward pass here
         encoder_output = self.inference_encoder(encoder, encoder_input).features
 
         self.assertTrue(isinstance(encoder_output, torch.Tensor))
@@ -88,10 +83,10 @@ class TestEncoders(unittest.TestCase):
             encoder = _make_encoder(encoder, **encoder_config)
             self._visualize_encoder_features_consistency(encoder, (224, 224))
 
-    def _visualize_encoder_features(self, encoder, image_size : Tuple[int, int]):
+    def _visualize_encoder_features(self, encoder, image_size: Tuple[int, int]):
         img = self._get_example_input(image_size, encoder.data_norm_type)
         # input and output of the encoder
-        encoder_input : ViTEncoderInput = ViTEncoderInput(
+        encoder_input: ViTEncoderInput = ViTEncoderInput(
             data_norm_type=encoder.data_norm_type,
             image=img,
         )
@@ -104,25 +99,24 @@ class TestEncoders(unittest.TestCase):
         # Visualize the features
         # rgb_image = render_pca_as_rgb(encoder_output)
         rgb_image = get_pca_map(encoder_output.permute(0, 2, 3, 1), image_size, return_pca_stats=False)
-        
+
         plt.imshow(rgb_image)
         plt.savefig(f"{encoder.name}_pca_features.png")
-    
+
         plt.imshow(img.permute(0, 2, 3, 1).squeeze(0))
         plt.savefig(f"{encoder.name}_input_image.png")
 
-    def _visualize_encoder_features_consistency(self, encoder, image_size : Tuple[int, int]):
-
+    def _visualize_encoder_features_consistency(self, encoder, image_size: Tuple[int, int]):
 
         img0 = self._get_example_input(image_size, encoder.data_norm_type, img_selection=1)
         img1 = self._get_example_input(image_size, encoder.data_norm_type, img_selection=2)
         # input and output of the encoder
-        encoder_input0 : ViTEncoderInput = ViTEncoderInput(
+        encoder_input0: ViTEncoderInput = ViTEncoderInput(
             data_norm_type=encoder.data_norm_type,
             image=img0,
         )
 
-        encoder_input1 : ViTEncoderInput = ViTEncoderInput(
+        encoder_input1: ViTEncoderInput = ViTEncoderInput(
             data_norm_type=encoder.data_norm_type,
             image=img1,
         )
@@ -138,34 +132,32 @@ class TestEncoders(unittest.TestCase):
 
         pca_viz = get_pca_map(cat_feats.permute(0, 2, 3, 1), (image_size[0], image_size[1] * 2), return_pca_stats=True)
 
-
         plt.imshow(pca_viz[0])
         plt.savefig(f"{encoder.name}_pca_consistency_features.png")
 
-
-
-
     @lru_cache(maxsize=3)
-    def _get_example_input(self, image_size : Tuple[int, int], image_norm_type : str = "dummy", img_selection : int = 1) -> torch.Tensor:
+    def _get_example_input(
+        self, image_size: Tuple[int, int], image_norm_type: str = "dummy", img_selection: int = 1
+    ) -> torch.Tensor:
         url = f"https://raw.githubusercontent.com/naver/croco/d3d0ab2858d44bcad54e5bfc24f565983fbe18d9/assets/Chateau{img_selection}.png"
         image = Image.open(requests.get(url, stream=True).raw)
-        image = image.resize(image_size)        
+        image = image.resize(image_size)
         image = image.convert("RGB")
 
         img = torch.from_numpy(np.array(image))
 
         # Normalize the images
         image_normalization = IMAGE_NORMALIZATION_DICT[image_norm_type]
-        
+
         img_mean, img_std = image_normalization.mean, image_normalization.std
-        
+
         img = (img.float() / 255.0 - img_mean) / img_std
 
         # convert to BCHW format
         img = img.permute(2, 0, 1).unsqueeze(0)
 
         return img
-    
+
     def _check_baseclass_attribute(self, encoder):
         self.assertTrue(hasattr(encoder, "name"))
         self.assertTrue(hasattr(encoder, "size"))
@@ -211,6 +203,7 @@ class TestEncoders(unittest.TestCase):
             self.assertTrue(layer < encoder.num_intermediate_layers)
             self.assertTrue(layer >= 0)
 
+
 def render_pca_as_rgb(features):
     """
     Perform PCA on the given feature tensor and render the first 3 principal components as RGB.
@@ -234,7 +227,9 @@ def render_pca_as_rgb(features):
     principal_components = pca.fit_transform(reshaped_features)
 
     # Rescale the principal components to [0, 1]
-    principal_components = (principal_components - principal_components.min(axis=0)) / (principal_components.max(axis=0) - principal_components.min(axis=0))
+    principal_components = (principal_components - principal_components.min(axis=0)) / (
+        principal_components.max(axis=0) - principal_components.min(axis=0)
+    )
 
     # Reshape the principal components to (B, H, W, 3)
     principal_components = principal_components.reshape(B, H, W, 3)
@@ -243,6 +238,7 @@ def render_pca_as_rgb(features):
     rgb_image = principal_components[0]
 
     return rgb_image
+
 
 def get_robust_pca(features: torch.Tensor, m: float = 2, remove_first_component=False):
     # features: (N, C)
@@ -292,9 +288,7 @@ def get_pca_map(
         # make it (1, h, w, C)
         feature_map = feature_map[None]
     if pca_stats is None:
-        reduct_mat, color_min, color_max = get_robust_pca(
-            feature_map.reshape(-1, feature_map.shape[-1])
-        )
+        reduct_mat, color_min, color_max = get_robust_pca(feature_map.reshape(-1, feature_map.shape[-1]))
     else:
         reduct_mat, color_min, color_max = pca_stats
     pca_color = feature_map @ reduct_mat
@@ -310,13 +304,14 @@ def get_pca_map(
         return pca_color, (reduct_mat, color_min, color_max)
     return pca_color
 
+
 def seed_everything(seed=42):
     """
-        Set the `seed` value for torch and numpy seeds. Also turns on
-        deterministic execution for cudnn.
-        
-        Parameters:
-        - seed:     A hashable seed value
+    Set the `seed` value for torch and numpy seeds. Also turns on
+    deterministic execution for cudnn.
+
+    Parameters:
+    - seed:     A hashable seed value
     """
     random.seed(seed)
     os.environ["PYTHONHASHSEED"] = str(seed)
@@ -326,6 +321,7 @@ def seed_everything(seed=42):
     torch.backends.cudnn.benchmark = False
     print(f"Seed set to: {seed} (type: {type(seed)})")
 
+
 if __name__ == "__main__":
     # unittest.main()
 
@@ -333,5 +329,3 @@ if __name__ == "__main__":
     seed_everything()
     test = TestEncoders()
     test.visualize_all_encoders()
-
-

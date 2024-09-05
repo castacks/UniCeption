@@ -1,3 +1,6 @@
+# --------------------------------------------------------
+# Encoder Factory for UniCeption
+# --------------------------------------------------------
 from uniception.models.encoders.base import (
     UniCeptionEncoderBase,
     UniCeptionViTEncoderBase,
