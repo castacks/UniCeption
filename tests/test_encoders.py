@@ -1,6 +1,8 @@
 # --------------------------------------------------------
 # Tests for all encoders that forces uniception functionalities
 # --------------------------------------------------------
+import os
+import random
 import unittest
 from functools import lru_cache
 from typing import Tuple
@@ -8,6 +10,7 @@ from typing import Tuple
 import numpy as np
 import requests
 import torch
+import torch.nn.functional as F
 from matplotlib import pyplot as plt
 from PIL import Image
 from sklearn.decomposition import PCA
@@ -20,14 +23,14 @@ class TestEncoders(unittest.TestCase):
     def __init__(self, *args, **kwargs):
         super(TestEncoders, self).__init__(*args, **kwargs)
 
-        self.norm_types = ["dummy"]
+        self.norm_types = IMAGE_NORMALIZATION_DICT.keys()
 
         self.encoders = [
-            "dummy"
+            "croco", "dust3r_224", "dust3r_512", "dust3r_512_dpt", "mast3r_512"
         ]
 
         self.encoder_configs = [
-            {}
+            {}, {}, {}, {}, {}
         ]
     
     def inference_encoder(self, encoder, input):
@@ -44,6 +47,8 @@ class TestEncoders(unittest.TestCase):
 
     def test_all_encoder_basics(self):
         for encoder, encoder_config in zip(self.encoders, self.encoder_configs):
+            print(f"Testing encoder: {encoder}")
+
             encoder = _make_encoder(encoder, **encoder_config)
             self._check_baseclass_attribute(encoder)
             self._check_norm_check_function(encoder)
@@ -62,38 +67,87 @@ class TestEncoders(unittest.TestCase):
                 self._test_vit_encoder_patch_size(encoder)
 
     def _test_vit_encoder_patch_size(self, encoder):
-        image_size = (16 * encoder.patch_size, 16 * encoder.patch_size)
+        image_size = (14 * encoder.patch_size, 14 * encoder.patch_size)
 
         img = self._get_example_input(image_size, encoder.data_norm_type)
         # input and output of the encoder
-        encoder_input = {"image": img, "data_norm_type": encoder.data_norm_type}
+        encoder_input : ViTEncoderInput = ViTEncoderInput(
+            data_norm_type=encoder.data_norm_type,
+            image=img,
+        )
 
         # TODO: Add the encoder forward pass here
-        encoder_output = self.inference_encoder(encoder, encoder_input)
+        encoder_output = self.inference_encoder(encoder, encoder_input).features
 
         self.assertTrue(isinstance(encoder_output, torch.Tensor))
-        self.assertTrue(encoder_output.shape[2] == 16)
-        self.assertTrue(encoder_output.shape[3] == 16)
+        self.assertTrue(encoder_output.shape[2] == 14)
+        self.assertTrue(encoder_output.shape[3] == 14)
+
+    def visualize_all_encoders(self):
+        for encoder, encoder_config in zip(self.encoders, self.encoder_configs):
+            encoder = _make_encoder(encoder, **encoder_config)
+            self._visualize_encoder_features_consistency(encoder, (224, 224))
 
     def _visualize_encoder_features(self, encoder, image_size : Tuple[int, int]):
         img = self._get_example_input(image_size, encoder.data_norm_type)
         # input and output of the encoder
-        encoder_input = {"image": img, "data_norm_type": encoder.data_norm_type}
+        encoder_input : ViTEncoderInput = ViTEncoderInput(
+            data_norm_type=encoder.data_norm_type,
+            image=img,
+        )
 
         encoder_output = self.inference_encoder(encoder, encoder_input)
+        encoder_output = encoder_output.features
 
-        encoder_output : torch.Tensor = torch.randn(1, 384, 14, 14)
         self.assertTrue(isinstance(encoder_output, torch.Tensor))
 
         # Visualize the features
-        rgb_image = render_pca_as_rgb(encoder_output)
+        # rgb_image = render_pca_as_rgb(encoder_output)
+        rgb_image = get_pca_map(encoder_output.permute(0, 2, 3, 1), image_size, return_pca_stats=False)
         
         plt.imshow(rgb_image)
-        plt.savefig("pca_features.png")
+        plt.savefig(f"{encoder.name}_pca_features.png")
     
+        plt.imshow(img.permute(0, 2, 3, 1).squeeze(0))
+        plt.savefig(f"{encoder.name}_input_image.png")
+
+    def _visualize_encoder_features_consistency(self, encoder, image_size : Tuple[int, int]):
+
+
+        img0 = self._get_example_input(image_size, encoder.data_norm_type, img_selection=1)
+        img1 = self._get_example_input(image_size, encoder.data_norm_type, img_selection=2)
+        # input and output of the encoder
+        encoder_input0 : ViTEncoderInput = ViTEncoderInput(
+            data_norm_type=encoder.data_norm_type,
+            image=img0,
+        )
+
+        encoder_input1 : ViTEncoderInput = ViTEncoderInput(
+            data_norm_type=encoder.data_norm_type,
+            image=img1,
+        )
+
+        encoder_output0 = self.inference_encoder(encoder, encoder_input0)
+        encoder_output0 = encoder_output0.features
+
+        encoder_output1 = self.inference_encoder(encoder, encoder_input1)
+        encoder_output1 = encoder_output1.features
+
+        # get a common PCA codec
+        cat_feats = torch.cat([encoder_output0, encoder_output1], dim=3)
+
+        pca_viz = get_pca_map(cat_feats.permute(0, 2, 3, 1), (image_size[0], image_size[1] * 2), return_pca_stats=True)
+
+
+        plt.imshow(pca_viz[0])
+        plt.savefig(f"{encoder.name}_pca_consistency_features.png")
+
+
+
+
     @lru_cache(maxsize=3)
-    def _get_example_input(self, image_size : Tuple[int, int], image_norm_type : str = "dummy") -> torch.Tensor:
-        url = "https://raw.githubusercontent.com/naver/croco/d3d0ab2858d44bcad54e5bfc24f565983fbe18d9/assets/Chateau1.png"
+    def _get_example_input(self, image_size : Tuple[int, int], image_norm_type : str = "dummy", img_selection : int = 1) -> torch.Tensor:
+        url = f"https://raw.githubusercontent.com/naver/croco/d3d0ab2858d44bcad54e5bfc24f565983fbe18d9/assets/Chateau{img_selection}.png"
         image = Image.open(requests.get(url, stream=True).raw)
         image = image.resize(image_size)        
         image = image.convert("RGB")
@@ -101,7 +155,10 @@ class TestEncoders(unittest.TestCase):
         img = torch.from_numpy(np.array(image))
 
         # Normalize the images
-        img_mean, img_std = IMAGE_NORMALIZATION_DICT[image_norm_type]
+        image_normalization = IMAGE_NORMALIZATION_DICT[image_norm_type]
+        
+        img_mean, img_std = image_normalization.mean, image_normalization.std
+        
         img = (img.float() / 255.0 - img_mean) / img_std
 
         # convert to BCHW format
@@ -187,9 +244,94 @@ def render_pca_as_rgb(features):
 
     return rgb_image
 
+def get_robust_pca(features: torch.Tensor, m: float = 2, remove_first_component=False):
+    # features: (N, C)
+    # m: a hyperparam controlling how many std dev outside for outliers
+    assert len(features.shape) == 2, "features should be (N, C)"
+    reduction_mat = torch.pca_lowrank(features, q=3, niter=20)[2]
+    colors = features @ reduction_mat
+    if remove_first_component:
+        colors_min = colors.min(dim=0).values
+        colors_max = colors.max(dim=0).values
+        tmp_colors = (colors - colors_min) / (colors_max - colors_min)
+        fg_mask = tmp_colors[..., 0] < 0.2
+        reduction_mat = torch.pca_lowrank(features[fg_mask], q=3, niter=20)[2]
+        colors = features @ reduction_mat
+    else:
+        fg_mask = torch.ones_like(colors[:, 0]).bool()
+    d = torch.abs(colors[fg_mask] - torch.median(colors[fg_mask], dim=0).values)
+    mdev = torch.median(d, dim=0).values
+    s = d / mdev
+    try:
+        rins = colors[fg_mask][s[:, 0] < m, 0]
+        gins = colors[fg_mask][s[:, 1] < m, 1]
+        bins = colors[fg_mask][s[:, 2] < m, 2]
+        rgb_min = torch.tensor([rins.min(), gins.min(), bins.min()])
+        rgb_max = torch.tensor([rins.max(), gins.max(), bins.max()])
+    except:
+        rins = colors
+        gins = colors
+        bins = colors
+        rgb_min = torch.tensor([rins.min(), gins.min(), bins.min()])
+        rgb_max = torch.tensor([rins.max(), gins.max(), bins.max()])
 
+    return reduction_mat, rgb_min.to(reduction_mat), rgb_max.to(reduction_mat)
+
+
+def get_pca_map(
+    feature_map: torch.Tensor,
+    img_size,
+    interpolation="bicubic",
+    return_pca_stats=False,
+    pca_stats=None,
+):
+    """
+    feature_map: (1, h, w, C) is the feature map of a single image.
+    """
+    if feature_map.shape[0] != 1:
+        # make it (1, h, w, C)
+        feature_map = feature_map[None]
+    if pca_stats is None:
+        reduct_mat, color_min, color_max = get_robust_pca(
+            feature_map.reshape(-1, feature_map.shape[-1])
+        )
+    else:
+        reduct_mat, color_min, color_max = pca_stats
+    pca_color = feature_map @ reduct_mat
+    pca_color = (pca_color - color_min) / (color_max - color_min)
+    pca_color = pca_color.clamp(0, 1)
+    pca_color = F.interpolate(
+        pca_color.permute(0, 3, 1, 2),
+        size=img_size,
+        mode=interpolation,
+    ).permute(0, 2, 3, 1)
+    pca_color = pca_color.detach().cpu().numpy().squeeze(0)
+    if return_pca_stats:
+        return pca_color, (reduct_mat, color_min, color_max)
+    return pca_color
+
+def seed_everything(seed=42):
+    """
+        Set the `seed` value for torch and numpy seeds. Also turns on
+        deterministic execution for cudnn.
+        
+        Parameters:
+        - seed:     A hashable seed value
+    """
+    random.seed(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    print(f"Seed set to: {seed} (type: {type(seed)})")
 
 if __name__ == "__main__":
-    unittest.main()
+    # unittest.main()
 
-    # Example usage of the PCA visualization
+    # visualize the features
+    seed_everything()
+    test = TestEncoders()
+    test.visualize_all_encoders()
+
+

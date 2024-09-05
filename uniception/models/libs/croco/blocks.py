@@ -85,7 +85,6 @@ class Mlp(nn.Module):
 
 
 class Attention(nn.Module):
-
     def __init__(
         self, dim, rope=None, num_heads=8, qkv_bias=False, attn_drop=0.0, proj_drop=0.0, torch_attn=use_torch_attn
     ):
@@ -130,7 +129,6 @@ class Attention(nn.Module):
 
 
 class Block(nn.Module):
-
     def __init__(
         self,
         dim,
@@ -162,7 +160,6 @@ class Block(nn.Module):
 
 
 class CrossAttention(nn.Module):
-
     def __init__(
         self, dim, rope=None, num_heads=8, qkv_bias=False, attn_drop=0.0, proj_drop=0.0, torch_attn=use_torch_attn
     ):
@@ -213,7 +210,6 @@ class CrossAttention(nn.Module):
 
 
 class DecoderBlock(nn.Module):
-
     def __init__(
         self,
         dim,
