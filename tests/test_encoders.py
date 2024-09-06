@@ -20,32 +20,45 @@ from uniception.models.encoders.image_normalizations import *
 
 class TestEncoders(unittest.TestCase):
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, pca_save_folder, *args, **kwargs):
         super(TestEncoders, self).__init__(*args, **kwargs)
+
+        self.pca_save_folder = pca_save_folder
 
         self.norm_types = IMAGE_NORMALIZATION_DICT.keys()
 
-        self.encoders = ["croco", "dust3r_224", "dust3r_512", "dust3r_512_dpt", "mast3r_512"]
+        self.encoders = [
+            "croco",
+            "dust3r_224",
+            "dust3r_512",
+            "dust3r_512_dpt",
+            "mast3r_512",
+            "dinov2_large",
+            "dinov2_large_reg",
+            "dinov2_large_dav2",
+            "dinov2_giant",
+            "dinov2_giant_reg",
+        ]
 
-        self.encoder_configs = [{}, {}, {}, {}, {}]
+        self.encoder_configs = [{}, {}, {}, {}, {}, {}, {}, {}, {}, {}]
 
     def inference_encoder(self, encoder, input):
         return encoder(input)
 
     def test_make_dummy_encoder(self):
-        encoder = _make_encoder("dummy")
+        encoder = _make_encoder_test("dummy")
         self.assertTrue(encoder is not None)
 
     def test_make_croco_encoder(self):
         additional_stuff = {}
-        encoder = _make_encoder("croco", **additional_stuff)
+        encoder = _make_encoder_test("croco", **additional_stuff)
         self.assertTrue(encoder is not None)
 
     def test_all_encoder_basics(self):
         for encoder, encoder_config in zip(self.encoders, self.encoder_configs):
             print(f"Testing encoder: {encoder}")
 
-            encoder = _make_encoder(encoder, **encoder_config)
+            encoder = _make_encoder_test(encoder, **encoder_config)
             self._check_baseclass_attribute(encoder)
             self._check_norm_check_function(encoder)
 
@@ -57,7 +70,7 @@ class TestEncoders(unittest.TestCase):
 
     def test_vit_encoder_patch_size(self):
         for encoder, encoder_config in zip(self.encoders, self.encoder_configs):
-            encoder = _make_encoder(encoder, **encoder_config)
+            encoder = _make_encoder_test(encoder, **encoder_config)
 
             if isinstance(encoder, UniCeptionViTEncoderBase):
                 self._test_vit_encoder_patch_size(encoder)
@@ -80,11 +93,11 @@ class TestEncoders(unittest.TestCase):
 
     def visualize_all_encoders(self):
         for encoder, encoder_config in zip(self.encoders, self.encoder_configs):
-            encoder = _make_encoder(encoder, **encoder_config)
+            encoder = _make_encoder_test(encoder, **encoder_config)
             self._visualize_encoder_features_consistency(encoder, (224, 224))
 
     def _visualize_encoder_features(self, encoder, image_size: Tuple[int, int]):
-        img = self._get_example_input(image_size, encoder.data_norm_type)
+        img, viz_img = self._get_example_input(image_size, encoder.data_norm_type, return_viz_img=True)
         # input and output of the encoder
         encoder_input: ViTEncoderInput = ViTEncoderInput(
             data_norm_type=encoder.data_norm_type,
@@ -96,20 +109,28 @@ class TestEncoders(unittest.TestCase):
 
         self.assertTrue(isinstance(encoder_output, torch.Tensor))
 
-        # Visualize the features
-        # rgb_image = render_pca_as_rgb(encoder_output)
-        rgb_image = get_pca_map(encoder_output.permute(0, 2, 3, 1), image_size, return_pca_stats=False)
+        # visualize the features
+        pca_viz = get_pca_map(encoder_output.permute(0, 2, 3, 1), image_size, return_pca_stats=False)
 
-        plt.imshow(rgb_image)
-        plt.savefig(f"{encoder.name}_pca_features.png")
-
-        plt.imshow(img.permute(0, 2, 3, 1).squeeze(0))
-        plt.savefig(f"{encoder.name}_input_image.png")
+        # plot the input image and the PCA features
+        fig, axs = plt.subplots(1, 2, figsize=(12, 6))
+        axs[0].imshow(viz_img)
+        axs[0].set_title("Input Image")
+        axs[0].axis("off")
+        axs[1].imshow(pca_viz)
+        axs[1].set_title(f"PCA Features of {encoder.name}")
+        axs[1].axis("off")
+        plt.savefig(f"{self.pca_save_folder}/pca_{encoder.name}.png", bbox_inches="tight")
+        plt.close()
 
     def _visualize_encoder_features_consistency(self, encoder, image_size: Tuple[int, int]):
 
-        img0 = self._get_example_input(image_size, encoder.data_norm_type, img_selection=1)
-        img1 = self._get_example_input(image_size, encoder.data_norm_type, img_selection=2)
+        img0, viz_img0 = self._get_example_input(
+            image_size, encoder.data_norm_type, img_selection=1, return_viz_img=True
+        )
+        img1, viz_img1 = self._get_example_input(
+            image_size, encoder.data_norm_type, img_selection=2, return_viz_img=True
+        )
         # input and output of the encoder
         encoder_input0: ViTEncoderInput = ViTEncoderInput(
             data_norm_type=encoder.data_norm_type,
@@ -132,12 +153,27 @@ class TestEncoders(unittest.TestCase):
 
         pca_viz = get_pca_map(cat_feats.permute(0, 2, 3, 1), (image_size[0], image_size[1] * 2), return_pca_stats=True)
 
-        plt.imshow(pca_viz[0])
-        plt.savefig(f"{encoder.name}_pca_consistency_features.png")
+        # concatenate the input images along the width dimension
+        cat_imgs = torch.cat([viz_img0, viz_img1], dim=1)
+
+        # plot the input image and the PCA features
+        fig, axs = plt.subplots(1, 2, figsize=(12, 6))
+        axs[0].imshow(cat_imgs)
+        axs[0].set_title("Input Images")
+        axs[0].axis("off")
+        axs[1].imshow(pca_viz[0])
+        axs[1].set_title(f"PCA Features of {encoder.name}")
+        axs[1].axis("off")
+        plt.savefig(f"{self.pca_save_folder}/multi_pca_{encoder.name}.png", bbox_inches="tight")
+        plt.close()
 
     @lru_cache(maxsize=3)
     def _get_example_input(
-        self, image_size: Tuple[int, int], image_norm_type: str = "dummy", img_selection: int = 1
+        self,
+        image_size: Tuple[int, int],
+        image_norm_type: str = "dummy",
+        img_selection: int = 1,
+        return_viz_img: bool = False,
     ) -> torch.Tensor:
         url = f"https://raw.githubusercontent.com/naver/croco/d3d0ab2858d44bcad54e5bfc24f565983fbe18d9/assets/Chateau{img_selection}.png"
         image = Image.open(requests.get(url, stream=True).raw)
@@ -145,6 +181,7 @@ class TestEncoders(unittest.TestCase):
         image = image.convert("RGB")
 
         img = torch.from_numpy(np.array(image))
+        viz_img = img.clone()
 
         # Normalize the images
         image_normalization = IMAGE_NORMALIZATION_DICT[image_norm_type]
@@ -156,7 +193,10 @@ class TestEncoders(unittest.TestCase):
         # convert to BCHW format
         img = img.permute(2, 0, 1).unsqueeze(0)
 
-        return img
+        if return_viz_img:
+            return img, viz_img
+        else:
+            return img
 
     def _check_baseclass_attribute(self, encoder):
         self.assertTrue(hasattr(encoder, "name"))
@@ -323,9 +363,21 @@ def seed_everything(seed=42):
 
 
 if __name__ == "__main__":
-    # unittest.main()
+    # Turn XFormers off for testing on CPU
+    os.environ["XFORMERS_DISABLED"] = "1"
 
-    # visualize the features
+    # Seed everything for consistent testing
     seed_everything()
-    test = TestEncoders()
+
+    # Create local directory for storing the PCA images
+    current_file_path = os.path.abspath(__file__)
+    relative_pca_image_folder = os.path.join(os.path.dirname(current_file_path), "../local/pca_images")
+    os.makedirs(relative_pca_image_folder, exist_ok=True)
+
+    # Test the Encoders
+    test = TestEncoders(pca_save_folder=relative_pca_image_folder)
+
+    # Visualize the PCA of all encoders
     test.visualize_all_encoders()
+
+    print("All encoder tests passed successfully!")

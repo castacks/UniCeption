@@ -48,7 +48,6 @@ class CroCoEncoder(UniCeptionViTEncoderBase):
             norm_layer (nn.Module, optional): The normalization layer to use in the transformer. Defaults to nn.LayerNorm with eps=1e-6.
             pos_embed (str, optional): Positional Embedding. Defaults to 'RoPE100'. Options: ['cosine', 'RoPE100'].
             pretrained_checkpoint_path (str, optional): Path to the pretrained checkpoint. Defaults to None.
-            **kwargs: Additional keyword arguments.
         """
         # Init the base class
         super().__init__(
