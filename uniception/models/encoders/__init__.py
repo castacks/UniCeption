@@ -13,6 +13,7 @@ from uniception.models.encoders.base import (
 
 from uniception.models.encoders.croco import CroCoEncoder
 from uniception.models.encoders.dinov2 import DINOv2Encoder
+from uniception.models.encoders.radio import RADIOEncoder
 
 
 def _make_encoder_test(encoder_str: str, **kwargs) -> UniCeptionEncoderBase:
@@ -77,6 +78,16 @@ def _make_encoder_test(encoder_str: str, **kwargs) -> UniCeptionEncoderBase:
             size=size,
             with_registers=with_registers,
             pretrained_checkpoint_path=pretrained_checkpoint_path,
+        )
+    elif "radio" in encoder_str:
+        if "e-radio" in encoder_str:
+            eradio_input_shape = (224, 224)
+        else:
+            eradio_input_shape = None
+        return RADIOEncoder(
+            name=encoder_str,
+            model_version=encoder_str,
+            eradio_input_shape=eradio_input_shape,
         )
     else:
         raise ValueError(f"Unknown encoder: {encoder_str}")

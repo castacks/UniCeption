@@ -76,7 +76,7 @@ class DINOv2Encoder(UniCeptionViTEncoderBase):
 
     def forward(self, encoder_input: ViTEncoderInput) -> ViTEncoderOutput:
         # Check image normalization type
-        self._check_image_normalization_type(encoder_input.data_norm_type)
+        self._check_data_normalization_type(encoder_input.data_norm_type)
 
         # Check the dtype and shape of the input image
         assert isinstance(encoder_input.image, torch.Tensor), "Input must be a torch.Tensor"

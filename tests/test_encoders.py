@@ -38,9 +38,12 @@ class TestEncoders(unittest.TestCase):
             "dinov2_large_dav2",
             "dinov2_giant",
             "dinov2_giant_reg",
+            "radio_v2.5-b",
+            "radio_v2.5-l",
+            "e-radio_v2",
         ]
 
-        self.encoder_configs = [{}, {}, {}, {}, {}, {}, {}, {}, {}, {}]
+        self.encoder_configs = [{}] * len(self.encoders)
 
     def inference_encoder(self, encoder, input):
         return encoder(input)
@@ -211,17 +214,17 @@ class TestEncoders(unittest.TestCase):
         self.assertTrue(encoder.data_norm_type in self.norm_types)
 
     def _check_norm_check_function(self, encoder):
-        self.assertTrue(hasattr(encoder, "_check_image_normalization_type"))
+        self.assertTrue(hasattr(encoder, "_check_data_normalization_type"))
 
         encoder_notm_type = encoder.data_norm_type
 
         try:
-            encoder._check_image_normalization_type(encoder_notm_type)
+            encoder._check_data_normalization_type(encoder_notm_type)
         except AssertionError:
             self.assertTrue(False)
 
         try:
-            encoder._check_image_normalization_type("some_nonexistent_norm_type")
+            encoder._check_data_normalization_type("some_nonexistent_norm_type")
             self.assertTrue(False)
         except AssertionError:
             pass

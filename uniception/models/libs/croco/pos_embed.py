@@ -101,7 +101,7 @@ def interpolate_pos_embed(model, checkpoint_model):
 # RoPE2D: RoPE implementation in 2D
 # ----------------------------------------------------------
 try:
-    from anymap.models.croco.curope import cuRoPE2D
+    from uniception.models.libs.croco.curope import cuRoPE2D
 
     RoPE2D = cuRoPE2D
 except ImportError:

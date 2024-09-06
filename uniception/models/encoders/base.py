@@ -57,16 +57,15 @@ class UniCeptionEncoderBase(nn.Module):
 
         raise NotImplementedError
 
-    def _check_image_normalization_type(self, data_norm_type: str):
+    def _check_data_normalization_type(self, data_norm_type: str):
         """
-        Check if the image normalization type matches the encoder's image normalization type.
-        of the data
+        Check if the input normalization type matches the encoder's expected input data normalization type.
 
         Args:
-            data_norm_type (str): Image normalization type.
+            data_norm_type (str): Data normalization type.
 
         Raises:
-            AssertionError: If the image normalization type does not match the encoder's image normalization.
+            AssertionError: If the data normalization type does not match the encoder's expected input data normalization type.
         """
 
         assert (

@@ -140,7 +140,7 @@ class CroCoEncoder(UniCeptionViTEncoderBase):
 
     def forward(self, encoder_input: ViTEncoderInput) -> ViTEncoderOutput:
         # Check image normalization type
-        self._check_image_normalization_type(encoder_input.data_norm_type)
+        self._check_data_normalization_type(encoder_input.data_norm_type)
 
         # Get the true shape of the image for landscape/portrait mode check in patch embedding
         batch_size, _, height, width = encoder_input.image.shape
