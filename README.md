@@ -4,14 +4,21 @@ Repository to support the AirLab's Generalizable Perception Stack.
 
 ## Installation
 
-Please install the `uniception` package in development mode by running the following command:
+Clone the repository to your local machine by running the following command:
+
+```bash
+git clone git@github.com:castacks/UniCeption.git
+```
+
+Install the `uniception` package in development mode by running the following commands:
 
 ```bash
 virtualenv uniception
 source uniception/bin/activate
-pip install torch torchvision torchaudio
+pip install torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0
+pip install -U xformers==0.0.27.post2 --index-url https://download.pytorch.org/whl/cu121
 pip install -r requirements.txt
-cd uniception/models/libs/croco/curope
+cd uniception/models/libs/croco/curope # For CroCo
 python3 setup.py build_ext --inplace
 cd ../../../../../
 pip install -e .

@@ -108,9 +108,9 @@ if __name__ == "__main__":
     # Init the custom pretrained DINOv2 encoders
     for size in ["small", "base", "large"]:
         pretrained_checkpoints_dict = {
-            "small": "/ocean/projects/cis220039p/nkeetha/code/UniCeption/checkpoints/encoders/DINOv2_ViTS_DepthAnythingV2.pth",
-            "base": "/ocean/projects/cis220039p/nkeetha/code/UniCeption/checkpoints/encoders/DINOv2_ViTB_DepthAnythingV2.pth",
-            "large": "/ocean/projects/cis220039p/nkeetha/code/UniCeption/checkpoints/encoders/DINOv2_ViTL_DepthAnythingV2.pth",
+            "small": "../../../checkpoints/encoders/DINOv2_ViTS_DepthAnythingV2.pth",
+            "base": "../../../checkpoints/encoders/DINOv2_ViTB_DepthAnythingV2.pth",
+            "large": "../../../checkpoints/encoders/DINOv2_ViTL_DepthAnythingV2.pth",
         }
         name = f"dinov2_dav2_{size}"
         dinov2_encoder = DINOv2Encoder(
