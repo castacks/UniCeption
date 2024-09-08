@@ -64,9 +64,12 @@ class DINOv2Encoder(UniCeptionViTEncoderBase):
 
         # Load the pretrained DINOv2 model from torch hub
         print(f"Loading pretrained {DINO_MODELS[self.with_registers][self.version]} from torch hub")
-        self.model = torch.hub.load(
-            "facebookresearch/dinov2", DINO_MODELS[self.with_registers][self.version], force_reload=True
-        )
+        try:  # Requires internet access
+            self.model = torch.hub.load(
+                "facebookresearch/dinov2", DINO_MODELS[self.with_registers][self.version], force_reload=True
+            )
+        except:  # Load from cache
+            self.model = torch.hub.load("facebookresearch/dinov2", DINO_MODELS[self.with_registers][self.version])
 
         # Load the custom pretrained checkpoint if provided
         if pretrained_checkpoint_path:

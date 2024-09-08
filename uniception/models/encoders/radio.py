@@ -45,14 +45,23 @@ class RADIOEncoder(UniCeptionViTEncoderBase):
 
         # Load the pretrained RADIO model from torch hub
         print(f"Loading pretrained {self.model_version} from torch hub")
-        self.model = torch.hub.load(
-            "NVlabs/RADIO",
-            "radio_model",
-            version=self.model_version,
-            progress=True,
-            skip_validation=True,
-            force_reload=True,
-        )
+        try:  # Requires internet access
+            self.model = torch.hub.load(
+                "NVlabs/RADIO",
+                "radio_model",
+                version=self.model_version,
+                progress=True,
+                skip_validation=True,
+                force_reload=True,
+            )
+        except:  # Load from cache
+            self.model = torch.hub.load(
+                "NVlabs/RADIO",
+                "radio_model",
+                version=self.model_version,
+                progress=True,
+                skip_validation=True,
+            )
 
         # Set the optimal window size for E-RADIO models
         if "e-radio" in self.model_version:
