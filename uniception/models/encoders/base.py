@@ -99,12 +99,13 @@ class UniCeptionViTEncoderBase(UniCeptionEncoderBase):
 
 
 class IntermediateFeatureReturner:
-    def __init__(self, num_intermediate_layers: int, selected_layers: List[int]):
+    def __init__(self, total_num_layers: int, selected_layers: List[int]):
         """
         Class to return intermediate features from the encoder.
         """
-        self.num_intermediate_layers: int = num_intermediate_layers
+        self.total_num_layers: int = total_num_layers
         self.selected_layers: List[int] = selected_layers
+        self.num_intermediate_layers: int = len(selected_layers)
 
 
 if __name__ == "__main__":

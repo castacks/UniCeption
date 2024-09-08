@@ -1,9 +1,8 @@
 # --------------------------------------------------------
-# Tests for all encoders that forces uniception functionalities
+# PCA Visualization of UniCeption Image Encoders
 # --------------------------------------------------------
 import os
 import random
-import unittest
 from functools import lru_cache
 from typing import Tuple
 
@@ -18,7 +17,7 @@ from uniception.models.encoders import *
 from uniception.models.encoders.image_normalizations import *
 
 
-class TestEncoders(unittest.TestCase):
+class TestEncoders:
 
     def __init__(self, pca_save_folder, *args, **kwargs):
         super(TestEncoders, self).__init__(*args, **kwargs)
@@ -47,52 +46,6 @@ class TestEncoders(unittest.TestCase):
 
     def inference_encoder(self, encoder, input):
         return encoder(input)
-
-    def test_make_dummy_encoder(self):
-        encoder = _make_encoder_test("dummy")
-        self.assertTrue(encoder is not None)
-
-    def test_make_croco_encoder(self):
-        additional_stuff = {}
-        encoder = _make_encoder_test("croco", **additional_stuff)
-        self.assertTrue(encoder is not None)
-
-    def test_all_encoder_basics(self):
-        for encoder, encoder_config in zip(self.encoders, self.encoder_configs):
-            print(f"Testing encoder: {encoder}")
-
-            encoder = _make_encoder_test(encoder, **encoder_config)
-            self._check_baseclass_attribute(encoder)
-            self._check_norm_check_function(encoder)
-
-            if isinstance(encoder, UniCeptionViTEncoderBase):
-                self._check_vit_encoder_attribute(encoder)
-
-            if isinstance(encoder, IntermediateFeatureReturner):
-                self._check_intermediate_feature_returner(encoder)
-
-    def test_vit_encoder_patch_size(self):
-        for encoder, encoder_config in zip(self.encoders, self.encoder_configs):
-            encoder = _make_encoder_test(encoder, **encoder_config)
-
-            if isinstance(encoder, UniCeptionViTEncoderBase):
-                self._test_vit_encoder_patch_size(encoder)
-
-    def _test_vit_encoder_patch_size(self, encoder):
-        image_size = (14 * encoder.patch_size, 14 * encoder.patch_size)
-
-        img = self._get_example_input(image_size, encoder.data_norm_type)
-        # input and output of the encoder
-        encoder_input: ViTEncoderInput = ViTEncoderInput(
-            data_norm_type=encoder.data_norm_type,
-            image=img,
-        )
-
-        encoder_output = self.inference_encoder(encoder, encoder_input).features
-
-        self.assertTrue(isinstance(encoder_output, torch.Tensor))
-        self.assertTrue(encoder_output.shape[2] == 14)
-        self.assertTrue(encoder_output.shape[3] == 14)
 
     def visualize_all_encoders(self):
         for encoder, encoder_config in zip(self.encoders, self.encoder_configs):
@@ -200,51 +153,6 @@ class TestEncoders(unittest.TestCase):
             return img, viz_img
         else:
             return img
-
-    def _check_baseclass_attribute(self, encoder):
-        self.assertTrue(hasattr(encoder, "name"))
-        self.assertTrue(hasattr(encoder, "size"))
-        self.assertTrue(hasattr(encoder, "data_norm_type"))
-
-        self.assertTrue(isinstance(encoder.name, str))
-        self.assertTrue(isinstance(encoder.size, str) or encoder.size is None)
-        self.assertTrue(isinstance(encoder.data_norm_type, str))
-
-        # Check if the data_norm_type is in the list of normalization types
-        self.assertTrue(encoder.data_norm_type in self.norm_types)
-
-    def _check_norm_check_function(self, encoder):
-        self.assertTrue(hasattr(encoder, "_check_data_normalization_type"))
-
-        encoder_notm_type = encoder.data_norm_type
-
-        try:
-            encoder._check_data_normalization_type(encoder_notm_type)
-        except AssertionError:
-            self.assertTrue(False)
-
-        try:
-            encoder._check_data_normalization_type("some_nonexistent_norm_type")
-            self.assertTrue(False)
-        except AssertionError:
-            pass
-
-    def _check_vit_encoder_attribute(self, encoder):
-        self.assertTrue(hasattr(encoder, "patch_size"))
-        self.assertTrue(isinstance(encoder.patch_size, int))
-        self.assertTrue(encoder.patch_size > 0)
-
-    def _check_intermediate_feature_returner(self, encoder):
-        self.assertTrue(hasattr(encoder, "num_intermediate_layers"))
-        self.assertTrue(hasattr(encoder, "selected_layers"))
-
-        self.assertTrue(isinstance(encoder.num_intermediate_layers, int))
-        self.assertTrue(isinstance(encoder.selected_layers, list))
-        self.assertTrue(len(encoder.selected_layers) == encoder.num_intermediate_layers)
-
-        for layer in encoder.selected_layers:
-            self.assertTrue(layer < encoder.num_intermediate_layers)
-            self.assertTrue(layer >= 0)
 
 
 def render_pca_as_rgb(features):
@@ -374,13 +282,13 @@ if __name__ == "__main__":
 
     # Create local directory for storing the PCA images
     current_file_path = os.path.abspath(__file__)
-    relative_pca_image_folder = os.path.join(os.path.dirname(current_file_path), "../local/pca_images")
+    relative_pca_image_folder = os.path.join(os.path.dirname(current_file_path), "../../../local/pca_images")
     os.makedirs(relative_pca_image_folder, exist_ok=True)
 
-    # Test the Encoders
+    # Initialize the test class
     test = TestEncoders(pca_save_folder=relative_pca_image_folder)
 
     # Visualize the PCA of all encoders
     test.visualize_all_encoders()
 
-    print("All encoder tests passed successfully!")
+    print(f"The PCA visualizations of all encoders are saved successfully to {relative_pca_image_folder}!")

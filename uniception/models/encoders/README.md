@@ -21,8 +21,13 @@ uniception/
 │   └── libs/
 │   │   ├── external_dependency_folders/
 |   |   |   ├── external_dependency_files
-├── tests/
-│   └── test_encoders.py
+tests/
+├── models/
+│   ├── encoders/
+│   │   ├── test_encoders.py
+│   │   ├── viz_image_encoders.py
+│   │   └── ...
+|   └── ...
 └── ...
 ```
 
@@ -49,9 +54,9 @@ To add a new encoder, follow these steps:
    - Update the `_make_encoder_test` function to include the new encoder.
 
 5. **Run Encoder Unit Tests**:
-   - Add your new encoder to the encoder list in the TestEncoders class in `tests/test_encoders.py`.
-   - Run `python3 tests/test_encoders.py` to test the basic expected functionality of UniCeption encoders.
-   - Optionally, for image encoders, the unit tests also save PCA visualizations of the encoder outputs to the `local/pca_images` directory.
+   - Add your new encoder to the encoder list in the TestEncoders class in `tests/models/encoders/test_encoders.py`.
+   - Run `python3 tests/models/encoders/test_encoders.py` to test the basic expected functionality of UniCeption encoders.
+   - Optionally, for image encoders, the unit tests in `tests/models/encoders/viz_image_encoders.py` save PCA visualizations of the encoder outputs to the `local/pca_images` directory.
 
 ## Example Encoder Implementation
 
@@ -91,9 +96,11 @@ IMAGE_NORMALIZATION_DICT = {
 
 ## Example Unit Testing
 
-Add the new encoder to the encoder factory in `__init__.py` and the encoder list in `tests/test_encoders.py`. Additional tests can also be added as required.
+Add the new encoder to the encoder factory in `__init__.py` and the encoder list in `tests/models/encoders/test_encoders.py`. Additional tests can also be added as required.
 
-Look at the main call in `test_encoders.py` to update what tests are run.
+Look at `tests/models/encoders/test_encoders.py` to see what tests are run.
+
+Additionally, if the new encoder is an image encoder, you can add to the encoder list in `tests/models/encoders/viz_image_encoders.py` for saving PCA visualizations of the encoder outputs to the `local/pca_images` directory.
 
 ## Developer Guidelines
 
