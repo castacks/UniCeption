@@ -10,7 +10,6 @@ except ModuleNotFoundError:
 
 
 class cuRoPE2D_func(torch.autograd.Function):
-
     @staticmethod
     def forward(ctx, tokens, positions, base, F0=1):
         ctx.save_for_backward(positions)
