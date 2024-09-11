@@ -18,10 +18,12 @@ else:
 
 
 def use_fused_attn() -> bool:
+    "Return whether to use torch.nn.functional.scaled_dot_product_attention"
     return _USE_FUSED_ATTN > 0
 
 
 def set_fused_attn(enable: bool = True):
+    "Set whether to use torch.nn.functional.scaled_dot_product_attention"
     global _USE_FUSED_ATTN
     if not _HAS_FUSED_ATTN:
         warnings.warn("This version of pytorch does not have F.scaled_dot_product_attention, fused_attn flag ignored.")

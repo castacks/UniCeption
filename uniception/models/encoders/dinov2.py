@@ -8,6 +8,8 @@ from uniception.models.encoders.base import UniCeptionViTEncoderBase, ViTEncoder
 
 
 class DINOv2Encoder(UniCeptionViTEncoderBase):
+    "UniCeption DINOv2 Encoder"
+
     def __init__(
         self,
         name: str,
@@ -79,6 +81,15 @@ class DINOv2Encoder(UniCeptionViTEncoderBase):
             print(self.load_state_dict(ckpt["model"]))
 
     def forward(self, encoder_input: ViTEncoderInput) -> ViTEncoderOutput:
+        """
+        DINOv2 Encoder Forward Pass
+
+        Args:
+            encoder_input (ViTEncoderInput): Input data for the encoder. Input data must contain image normalization type and normalized image tensor.
+
+        Returns:
+            ViTEncoderOutput: Output data from the encoder.
+        """
         # Check image normalization type
         self._check_data_normalization_type(encoder_input.data_norm_type)
 

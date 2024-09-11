@@ -1,6 +1,7 @@
-# --------------------------------------------------------
-# Base Prediction Head Class for UniCeption
-# --------------------------------------------------------
+"""
+Adaptors for the UniCeption Prediction Heads.
+"""
+
 from math import isfinite
 import numpy as np
 import torch

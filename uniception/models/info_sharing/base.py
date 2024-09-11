@@ -18,6 +18,8 @@ class InfoSharingOutput:
 
 
 class UniCeptionInfoSharingBase(nn.Module):
+    "Information Sharing Base Class for UniCeption"
+
     def __init__(
         self,
         name: str,

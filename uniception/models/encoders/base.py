@@ -11,16 +11,20 @@ from typing import List, Optional
 
 @dataclass
 class EncoderInput:
+    "Data class for Encoder Input"
     data_norm_type: str
     # Add other fields that are required by the specific implementation of the encoder.
 
 
 @dataclass
 class EncoderOutput:
+    "Data class for Encoder Output"
     pass
 
 
 class UniCeptionEncoderBase(nn.Module):
+    "Encoder Base Class for UniCeption"
+
     def __init__(
         self,
         name: str,
@@ -76,15 +80,19 @@ class UniCeptionEncoderBase(nn.Module):
 
 @dataclass
 class ViTEncoderInput(EncoderInput):
+    "Data class for Vision Transformer Encoder Input"
     image: Float[Tensor, "batch channel height width"]
 
 
 @dataclass
 class ViTEncoderOutput(EncoderOutput):
+    "Data class for Vision Transformer Encoder Output"
     features: Float[Tensor, "batch enc_embed_dim feat_height feat_width"]
 
 
 class UniCeptionViTEncoderBase(UniCeptionEncoderBase):
+    "Vision Transformer Encoder Base Class for UniCeption"
+
     def __init__(
         self,
         patch_size: int,
@@ -100,6 +108,8 @@ class UniCeptionViTEncoderBase(UniCeptionEncoderBase):
 
 
 class IntermediateFeatureReturner:
+    "Intermediate Feature Returner Class"
+
     def __init__(self, total_num_layers: int, selected_layers: List[int]):
         """
         Class to return intermediate features from the encoder.

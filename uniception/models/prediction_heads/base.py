@@ -1,6 +1,7 @@
-# --------------------------------------------------------
-# Base Prediction Head Class for UniCeption
-# --------------------------------------------------------
+"""
+Base Prediction Head Class for UniCeption
+"""
+
 import torch
 import torch.nn as nn
 from dataclasses import dataclass

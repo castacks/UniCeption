@@ -19,6 +19,8 @@ torch.backends.cuda.matmul.allow_tf32 = True
 
 
 def _ntuple(n):
+    "Helper function to create n-tuple."
+
     def parse(x):
         if isinstance(x, collections.abc.Iterable) and not isinstance(x, str):
             return x
@@ -85,24 +87,38 @@ class Mlp(nn.Module):
 
 
 class Attention(nn.Module):
+    "Self-Attention Layer"
     fused_attn: Final[bool]
 
     def __init__(
-            self,
-            dim: int,
-            num_heads: int = 8,
-            qkv_bias: bool = False,
-            qk_norm: bool = False,
-            attn_drop: float = 0.,
-            proj_drop: float = 0.,
-            norm_layer: nn.Module = nn.LayerNorm,
-            custom_positional_encoding: Callable = None,
+        self,
+        dim: int,
+        num_heads: int = 8,
+        qkv_bias: bool = False,
+        qk_norm: bool = False,
+        attn_drop: float = 0.0,
+        proj_drop: float = 0.0,
+        norm_layer: nn.Module = nn.LayerNorm,
+        custom_positional_encoding: Callable = None,
     ) -> None:
+        """
+        Initialize the Attention layer.
+
+        Args:
+            dim (int): Dimension of input features
+            num_heads (int): Number of attention heads (default: 8)
+            qkv_bias (bool): Whether to include bias in qkv projection (default: False)
+            qk_norm (bool): Whether to normalize q and k (default: False)
+            attn_drop (float): Dropout rate for attention weights (default: 0.)
+            proj_drop (float): Dropout rate for output (default: 0.)
+            norm_layer (nn.Module): Normalization layer (default: nn.LayerNorm)
+            custom_positional_encoding (Callable): Custom positional encoding function (default: None)
+        """
         super().__init__()
-        assert dim % num_heads == 0, 'dim should be divisible by num_heads'
+        assert dim % num_heads == 0, "dim should be divisible by num_heads"
         self.num_heads = num_heads
         self.head_dim = dim // num_heads
-        self.scale = self.head_dim ** -0.5
+        self.scale = self.head_dim**-0.5
         self.fused_attn = use_fused_attn()
 
         self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
@@ -115,21 +131,31 @@ class Attention(nn.Module):
         self.custom_positional_encoding = custom_positional_encoding
 
     def forward(self, x: torch.Tensor, xpos: torch.Tensor = None) -> torch.Tensor:
+        """
+        Forward pass of the Attention layer.
+
+        Args:
+            x (torch.Tensor): Input features
+            xpos (torch.Tensor): Positions of tokens (required when using custom positional encoding)
+
+        Returns:
+            torch.Tensor: Output features of same shape as input
+        """
         B, N, C = x.shape
         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim).permute(2, 0, 3, 1, 4)
         q, k, v = qkv.unbind(0)
         q, k = self.q_norm(q), self.k_norm(k)
 
         if self.custom_positional_encoding is not None:
-            assert xpos is not None, "Positions of tokens (xpos) are a required input when using custom positional encoding"
+            assert (
+                xpos is not None
+            ), "Positions of tokens (xpos) are a required input when using custom positional encoding"
             q = self.custom_positional_encoding(q, xpos)
             k = self.custom_positional_encoding(k, xpos)
 
         if self.fused_attn:
             x = F.scaled_dot_product_attention(
-                q, k, v,
-                dropout_p=(self.attn_drop.p if self.training else 0.),
-                scale=self.scale
+                q, k, v, dropout_p=(self.attn_drop.p if self.training else 0.0), scale=self.scale
             )
         else:
             q = q * self.scale
@@ -145,24 +171,38 @@ class Attention(nn.Module):
 
 
 class CrossAttention(nn.Module):
+    "Cross-Attention Layer"
     fused_attn: Final[bool]
 
     def __init__(
-            self,
-            dim: int,
-            num_heads: int = 8,
-            qkv_bias: bool = False,
-            qk_norm: bool = False,
-            attn_drop: float = 0.,
-            proj_drop: float = 0.,
-            norm_layer: nn.Module = nn.LayerNorm,
-            custom_positional_encoding: Callable = None,
+        self,
+        dim: int,
+        num_heads: int = 8,
+        qkv_bias: bool = False,
+        qk_norm: bool = False,
+        attn_drop: float = 0.0,
+        proj_drop: float = 0.0,
+        norm_layer: nn.Module = nn.LayerNorm,
+        custom_positional_encoding: Callable = None,
     ) -> None:
+        """
+        Initialize the Cross-Attention layer.
+
+        Args:
+            dim (int): Dimension of input features
+            num_heads (int): Number of attention heads (default: 8)
+            qkv_bias (bool): Whether to include bias in qkv projection (default: False)
+            qk_norm (bool): Whether to normalize q and k (default: False)
+            attn_drop (float): Dropout rate for attention weights (default: 0.)
+            proj_drop (float): Dropout rate for output (default: 0.)
+            norm_layer (nn.Module): Normalization layer (default: nn.LayerNorm)
+            custom_positional_encoding (Callable): Custom positional encoding function (default: None)
+        """
         super().__init__()
-        assert dim % num_heads == 0, 'dim should be divisible by num_heads'
+        assert dim % num_heads == 0, "dim should be divisible by num_heads"
         self.num_heads = num_heads
         self.head_dim = dim // num_heads
-        self.scale = self.head_dim ** -0.5
+        self.scale = self.head_dim**-0.5
         self.fused_attn = use_fused_attn()
 
         self.projq = nn.Linear(dim, dim, bias=qkv_bias)
@@ -177,13 +217,26 @@ class CrossAttention(nn.Module):
         self.custom_positional_encoding = custom_positional_encoding
 
     def forward(
-            self, 
-            query: torch.Tensor, 
-            key: torch.Tensor, 
-            value: torch.Tensor, 
-            qpos: torch.Tensor = None,
-            kpos: torch.Tensor = None,
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        qpos: torch.Tensor = None,
+        kpos: torch.Tensor = None,
     ) -> torch.Tensor:
+        """
+        Forward pass of the Cross-Attention layer.
+
+        Args:
+            query (torch.Tensor): Query features
+            key (torch.Tensor): Key features
+            value (torch.Tensor): Value features
+            qpos (torch.Tensor): Positions of queries (required when using custom positional encoding)
+            kpos (torch.Tensor): Positions of keys (required when using custom positional encoding)
+
+        Returns:
+            torch.Tensor: Output features of same shape as input
+        """
         B, Nq, C = query.shape
         Nk = key.shape[1]
         Nv = value.shape[1]
@@ -194,16 +247,18 @@ class CrossAttention(nn.Module):
         q, k = self.q_norm(q), self.k_norm(k)
 
         if self.custom_positional_encoding is not None:
-            assert qpos is not None, "Positions of queries (qpos) are a required input when using custom positional encoding"
-            assert kpos is not None, "Positions of keys (kpos) are a required input when using custom positional encoding"
+            assert (
+                qpos is not None
+            ), "Positions of queries (qpos) are a required input when using custom positional encoding"
+            assert (
+                kpos is not None
+            ), "Positions of keys (kpos) are a required input when using custom positional encoding"
             q = self.custom_positional_encoding(q, qpos)
             k = self.custom_positional_encoding(k, kpos)
 
         if self.fused_attn:
             x = F.scaled_dot_product_attention(
-                q, k, v,
-                dropout_p=(self.attn_drop.p if self.training else 0.),
-                scale=self.scale
+                q, k, v, dropout_p=(self.attn_drop.p if self.training else 0.0), scale=self.scale
             )
         else:
             q = q * self.scale
@@ -219,37 +274,68 @@ class CrossAttention(nn.Module):
 
 
 class LayerScale(nn.Module):
+    "Layer Scale Layer"
+
     def __init__(
-            self,
-            dim: int,
-            init_values: float = 1e-5,
-            inplace: bool = False,
+        self,
+        dim: int,
+        init_values: float = 1e-5,
+        inplace: bool = False,
     ) -> None:
+        """
+        Initialize the Layer Scale layer
+
+        Args:
+            dim (int): Dimension of input features
+            init_values (float): Initial value for LayerScale gamma (default: 1e-5)
+            inplace (bool): Whether to perform inplace operations (default: False)
+        """
         super().__init__()
         self.inplace = inplace
         self.gamma = nn.Parameter(init_values * torch.ones(dim))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        "Forward pass of the Layer Scale layer"
         return x.mul_(self.gamma) if self.inplace else x * self.gamma
 
 
 class SelfAttentionBlock(nn.Module):
+    "Self-Attention Block"
+
     def __init__(
-            self,
-            dim: int,
-            num_heads: int,
-            mlp_ratio: float = 4.,
-            qkv_bias: bool = False,
-            qk_norm: bool = False,
-            proj_drop: float = 0.,
-            attn_drop: float = 0.,
-            init_values: Optional[float] = None,
-            drop_path: float = 0.,
-            act_layer: nn.Module = nn.GELU,
-            norm_layer: nn.Module = nn.LayerNorm,
-            mlp_layer: nn.Module = Mlp,
-            custom_positional_encoding: Callable = None,
+        self,
+        dim: int,
+        num_heads: int,
+        mlp_ratio: float = 4.0,
+        qkv_bias: bool = False,
+        qk_norm: bool = False,
+        proj_drop: float = 0.0,
+        attn_drop: float = 0.0,
+        init_values: Optional[float] = None,
+        drop_path: float = 0.0,
+        act_layer: nn.Module = nn.GELU,
+        norm_layer: nn.Module = nn.LayerNorm,
+        mlp_layer: nn.Module = Mlp,
+        custom_positional_encoding: Callable = None,
     ) -> None:
+        """
+        Initialize the Self-Attention Block.
+
+        Args:
+            dim (int): Dimension of input features
+            num_heads (int): Number of attention heads
+            mlp_ratio (float): Ratio of hidden to input dimension in MLP (default: 4.)
+            qkv_bias (bool): Whether to include bias in qkv projection (default: False)
+            qk_norm (bool): Whether to normalize q and k (default: False)
+            proj_drop (float): Dropout rate for output (default: 0.)
+            attn_drop (float): Dropout rate for attention weights (default: 0.)
+            init_values (float): Initial value for LayerScale gamma (default: None)
+            drop_path (float): Dropout rate for stochastic depth (default: 0.)
+            act_layer (nn.Module): Activation layer (default: nn.GELU)
+            norm_layer (nn.Module): Normalization layer (default: nn.LayerNorm)
+            mlp_layer (nn.Module): MLP layer (default: Mlp)
+            custom_positional_encoding (Callable): Custom positional encoding function (default: None)
+        """
         super().__init__()
         self.norm1 = norm_layer(dim)
         self.attn = Attention(
@@ -263,7 +349,7 @@ class SelfAttentionBlock(nn.Module):
             custom_positional_encoding=custom_positional_encoding,
         )
         self.ls1 = LayerScale(dim, init_values=init_values) if init_values else nn.Identity()
-        self.drop_path1 = DropPath(drop_path) if drop_path > 0. else nn.Identity()
+        self.drop_path1 = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
 
         self.norm2 = norm_layer(dim)
         self.mlp = mlp_layer(
@@ -273,36 +359,72 @@ class SelfAttentionBlock(nn.Module):
             drop=proj_drop,
         )
         self.ls2 = LayerScale(dim, init_values=init_values) if init_values else nn.Identity()
-        self.drop_path2 = DropPath(drop_path) if drop_path > 0. else nn.Identity()
+        self.drop_path2 = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
 
         self.custom_positional_encoding = custom_positional_encoding
 
     def forward(self, x: torch.Tensor, xpos: torch.Tensor = None) -> torch.Tensor:
+        """
+        Forward pass of the Self-Attention Block.
+
+        Args:
+            x (torch.Tensor): Input features
+            xpos (torch.Tensor): Positions of tokens (required when using custom positional encoding)
+
+        Returns:
+            torch.Tensor: Output features of same shape as input
+        """
         if self.custom_positional_encoding is not None:
-            assert xpos is not None, "Positions of tokens (xpos) are a required input when using custom positional encoding"
+            assert (
+                xpos is not None
+            ), "Positions of tokens (xpos) are a required input when using custom positional encoding"
         x = x + self.drop_path1(self.ls1(self.attn(self.norm1(x), xpos)))
         x = x + self.drop_path2(self.ls2(self.mlp(self.norm2(x))))
         return x
 
 
 class CrossAttentionBlock(nn.Module):
+    "Cross-Attention Block"
+
     def __init__(
-            self,
-            dim: int,
-            num_heads: int,
-            mlp_ratio: float = 4.,
-            qkv_bias: bool = False,
-            qk_norm: bool = False,
-            proj_drop: float = 0.,
-            attn_drop: float = 0.,
-            init_values: Optional[float] = None,
-            drop_path: float = 0.,
-            act_layer: nn.Module = nn.GELU,
-            norm_layer: nn.Module = nn.LayerNorm,
-            mlp_layer: nn.Module = Mlp,
-            custom_positional_encoding: Callable = None,
-            norm_cross_tokens: bool = True,
+        self,
+        dim: int,
+        num_heads: int,
+        mlp_ratio: float = 4.0,
+        qkv_bias: bool = False,
+        qk_norm: bool = False,
+        proj_drop: float = 0.0,
+        attn_drop: float = 0.0,
+        init_values: Optional[float] = None,
+        drop_path: float = 0.0,
+        act_layer: nn.Module = nn.GELU,
+        norm_layer: nn.Module = nn.LayerNorm,
+        mlp_layer: nn.Module = Mlp,
+        custom_positional_encoding: Callable = None,
+        norm_cross_tokens: bool = True,
     ) -> None:
+        """
+        Initialize the Cross-Attention Block.
+
+        Args:
+            dim (int): Dimension of input features
+            num_heads (int): Number of attention heads
+            mlp_ratio (float): Ratio of hidden to input dimension in MLP (default: 4.)
+            qkv_bias (bool): Whether to include bias in qkv projection (default: False)
+            qk_norm (bool): Whether to normalize q and k (default: False)
+            proj_drop (float): Dropout rate for output (default: 0.)
+            attn_drop (float): Dropout rate for attention weights (default: 0.)
+            init_values (float): Initial value for LayerScale gamma (default: None)
+            drop_path (float): Dropout rate for stochastic depth (default: 0.)
+            act_layer (nn.Module): Activation layer (default: nn.GELU)
+            norm_layer (nn.Module): Normalization layer (default: nn.LayerNorm)
+            mlp_layer (nn.Module): MLP layer (default: Mlp)
+            custom_positional_encoding (Callable): Custom positional encoding function (default: None)
+            norm_cross_tokens (bool): Whether to normalize cross tokens (default: True)
+
+        Returns:
+            torch.Tensor: Output features of same shape as input
+        """
         super().__init__()
         self.norm1 = norm_layer(dim)
         self.attn = Attention(
@@ -316,7 +438,7 @@ class CrossAttentionBlock(nn.Module):
             custom_positional_encoding=custom_positional_encoding,
         )
         self.ls1 = LayerScale(dim, init_values=init_values) if init_values else nn.Identity()
-        self.drop_path1 = DropPath(drop_path) if drop_path > 0. else nn.Identity()
+        self.drop_path1 = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
 
         self.norm_y = norm_layer(dim) if norm_cross_tokens else nn.Identity()
         self.custom_positional_encoding = custom_positional_encoding
@@ -332,7 +454,7 @@ class CrossAttentionBlock(nn.Module):
             custom_positional_encoding=custom_positional_encoding,
         )
         self.ls2 = LayerScale(dim, init_values=init_values) if init_values else nn.Identity()
-        self.drop_path2 = DropPath(drop_path) if drop_path > 0. else nn.Identity()
+        self.drop_path2 = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
 
         self.norm3 = norm_layer(dim)
         self.mlp = mlp_layer(
@@ -342,18 +464,34 @@ class CrossAttentionBlock(nn.Module):
             drop=proj_drop,
         )
         self.ls3 = LayerScale(dim, init_values=init_values) if init_values else nn.Identity()
-        self.drop_path3 = DropPath(drop_path) if drop_path > 0. else nn.Identity()
+        self.drop_path3 = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
 
     def forward(
-            self, 
-            x: torch.Tensor, 
-            y: torch.Tensor, 
-            xpos: torch.Tensor = None,
-            ypos: torch.Tensor = None,
+        self,
+        x: torch.Tensor,
+        y: torch.Tensor,
+        xpos: torch.Tensor = None,
+        ypos: torch.Tensor = None,
     ) -> torch.Tensor:
+        """
+        Forward pass of the Cross-Attention Block.
+
+        Args:
+            x (torch.Tensor): Input features
+            y (torch.Tensor): Cross features
+            xpos (torch.Tensor): Positions of tokens (required when using custom positional encoding)
+            ypos (torch.Tensor): Positions of cross tokens (required when using custom positional encoding)
+
+        Returns:
+            torch.Tensor: Output features of same shape as input
+        """
         if self.custom_positional_encoding is not None:
-            assert xpos is not None, "Positions of tokens (xpos) are a required input when using custom positional encoding"
-            assert ypos is not None, "Positions of cross tokens (ypos) are a required input when using custom positional encoding"
+            assert (
+                xpos is not None
+            ), "Positions of tokens (xpos) are a required input when using custom positional encoding"
+            assert (
+                ypos is not None
+            ), "Positions of cross tokens (ypos) are a required input when using custom positional encoding"
         x = x + self.drop_path1(self.ls1(self.attn(self.norm1(x), xpos)))
         y_ = self.norm_y(y)
         x = x + self.drop_path2(self.ls2(self.cross_attn(self.norm2(x), y_, y_, xpos, ypos)))

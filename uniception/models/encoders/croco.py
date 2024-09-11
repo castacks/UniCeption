@@ -14,6 +14,8 @@ from uniception.models.libs.croco.pos_embed import get_2d_sincos_pos_embed, RoPE
 
 
 class CroCoEncoder(UniCeptionViTEncoderBase):
+    "UniCeption CroCov2 Encoder"
+
     def __init__(
         self,
         name: str,
@@ -32,7 +34,6 @@ class CroCoEncoder(UniCeptionViTEncoderBase):
         **kwargs,
     ):
         """
-        CroCoV2 Encoder
         References: https://github.com/naver/dust3r, https://github.com/naver/croco
 
         Args:
@@ -112,9 +113,11 @@ class CroCoEncoder(UniCeptionViTEncoderBase):
             print("No pretrained checkpoint provided. Randomly initializing the CroCo encoder.")
 
     def _set_patch_embed(self, img_size=224, patch_size=16, enc_embed_dim=768):
+        "Set the patch embedding scheme"
         self.patch_embed = get_patch_embed(self.patch_embed_cls, img_size, patch_size, enc_embed_dim)
 
     def _set_encoder(self, enc_depth, enc_embed_dim, enc_num_heads, mlp_ratio, norm_layer, rope):
+        "Set the encoder"
         self.enc_blocks = nn.ModuleList(
             [
                 Block(enc_embed_dim, enc_num_heads, mlp_ratio, qkv_bias=True, norm_layer=norm_layer, rope=rope)
@@ -124,12 +127,14 @@ class CroCoEncoder(UniCeptionViTEncoderBase):
         self.enc_norm = norm_layer(enc_embed_dim)
 
     def initialize_weights(self):
+        "Initialize the weights of the patch embedding and the transformer encoder"
         # Patch embedding
         self.patch_embed._init_weights()
         # Linears and layer norms
         self.apply(self._init_weights)
 
     def _init_weights(self, m):
+        "Initialize of the transformer encoder weights"
         if isinstance(m, nn.Linear):
             # We use xavier_uniform following official JAX ViT:
             torch.nn.init.xavier_uniform_(m.weight)
@@ -140,6 +145,15 @@ class CroCoEncoder(UniCeptionViTEncoderBase):
             nn.init.constant_(m.weight, 1.0)
 
     def forward(self, encoder_input: ViTEncoderInput) -> ViTEncoderOutput:
+        """
+        CroCov2 Encoder Forward Pass
+
+        Args:
+            encoder_input (ViTEncoderInput): Input data for the encoder. Input data must contain image normalization type and normalized image tensor.
+
+        Returns:
+            ViTEncoderOutput: Output data from the encoder.
+        """
         # Check image normalization type
         self._check_data_normalization_type(encoder_input.data_norm_type)
 
