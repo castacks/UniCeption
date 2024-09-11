@@ -64,9 +64,6 @@ class TestEncoders(unittest.TestCase):
                 self._check_vit_encoder_attribute(encoder)
                 self._test_vit_encoder_patch_size(encoder)
 
-            if isinstance(encoder, IntermediateFeatureReturner):
-                self._check_intermediate_feature_returner(encoder)
-
     @lru_cache(maxsize=3)
     def _get_example_input(
         self,
@@ -147,20 +144,6 @@ class TestEncoders(unittest.TestCase):
         self.assertTrue(hasattr(encoder, "patch_size"))
         self.assertTrue(isinstance(encoder.patch_size, int))
         self.assertTrue(encoder.patch_size > 0)
-
-    def _check_intermediate_feature_returner(self, encoder):
-        self.assertTrue(hasattr(encoder, "total_num_layers"))
-        self.assertTrue(hasattr(encoder, "selected_layers"))
-        self.assertTrue(hasattr(encoder, "num_intermediate_layers"))
-
-        self.assertTrue(isinstance(encoder.total_num_layers, int))
-        self.assertTrue(isinstance(encoder.selected_layers, list))
-        self.assertTrue(isinstance(encoder.num_intermediate_layers, int))
-        self.assertTrue(len(encoder.selected_layers) == encoder.num_intermediate_layers)
-
-        for layer in encoder.selected_layers:
-            self.assertTrue(layer < encoder.total_num_layers)
-            self.assertTrue(layer >= 0)
 
 
 def seed_everything(seed=42):

@@ -6,7 +6,6 @@ import os
 from uniception.models.encoders.base import (
     UniCeptionEncoderBase,
     UniCeptionViTEncoderBase,
-    IntermediateFeatureReturner,
     EncoderInput,
     ViTEncoderInput,
     ViTEncoderOutput,
@@ -98,7 +97,6 @@ __all__ = [
     "_make_encoder_test",
     "UniCeptionEncoderBase",
     "UniCeptionViTEncoderBase",
-    "IntermediateFeatureReturner",
     "EncoderInput",
     "ViTEncoderInput",
     "ViTEncoderOutput",

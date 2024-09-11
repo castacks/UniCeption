@@ -3,8 +3,11 @@
 ## Currently Supported Encoders
 
 - CroCoEncoder(UniCeptionViTEncoderBase)
+   - CroCoIntermediateFeatureReturner
 - DINOv2Encoder(UniCeptionViTEncoderBase)
+   - DINOv2IntermediateFeatureReturner
 - RADIOEncoder(UniCeptionViTEncoderBase)
+   - RADIOIntermediateFeatureReturner
 
 # Developer Guidelines for UniCeption Encoders
 

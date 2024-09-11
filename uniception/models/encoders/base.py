@@ -6,7 +6,7 @@ import torch.nn as nn
 from jaxtyping import Float
 from dataclasses import dataclass
 from torch import Tensor
-from typing import List, Optional
+from typing import Optional
 
 
 @dataclass
@@ -105,18 +105,6 @@ class UniCeptionViTEncoderBase(UniCeptionEncoderBase):
         super().__init__(*args, **kwargs)
 
         self.patch_size = patch_size
-
-
-class IntermediateFeatureReturner:
-    "Intermediate Feature Returner Class"
-
-    def __init__(self, total_num_layers: int, selected_layers: List[int]):
-        """
-        Class to return intermediate features from the encoder.
-        """
-        self.total_num_layers: int = total_num_layers
-        self.selected_layers: List[int] = selected_layers
-        self.num_intermediate_layers: int = len(selected_layers)
 
 
 if __name__ == "__main__":
