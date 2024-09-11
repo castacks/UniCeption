@@ -1,6 +1,7 @@
-# --------------------------------------------------------
-# Encoder Class for CroCo & DUSt3R
-# --------------------------------------------------------
+"""
+Encoder Class for CroCo & DUSt3R
+"""
+
 import torch
 import torch.nn as nn
 from functools import partial

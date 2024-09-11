@@ -14,7 +14,9 @@ import torch.nn as nn
 
 torch.backends.cuda.matmul.allow_tf32 = True  # for gpu >= Ampere and pytorch >= 1.12
 # Use torch.nn.functional.scaled_dot_product_attention instead of the naive PyTorch implementation
-use_torch_attn = True
+from uniception.models.utils.config import use_fused_attn
+
+use_torch_attn = use_fused_attn()
 
 from itertools import repeat
 import collections.abc

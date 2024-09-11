@@ -1,6 +1,7 @@
-# --------------------------------------------------------
-# Base Encoder Class for UniCeption
-# --------------------------------------------------------
+"""
+Base Encoder Class for UniCeption
+"""
+
 import torch.nn as nn
 from jaxtyping import Float
 from dataclasses import dataclass

@@ -1,6 +1,7 @@
-# --------------------------------------------------------
-# Encoder Class for DINOv2
-# --------------------------------------------------------
+"""
+Encoder Class for DINOv2
+"""
+
 import torch
 
 from uniception.models.encoders.base import UniCeptionViTEncoderBase, ViTEncoderInput, ViTEncoderOutput

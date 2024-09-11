@@ -1,6 +1,6 @@
-# --------------------------------------------------------
-# Tests for all image encoders that force uniception functionalities
-# --------------------------------------------------------
+"""
+Tests for all image encoders that force uniception functionalities
+"""
 import os
 import random
 import unittest

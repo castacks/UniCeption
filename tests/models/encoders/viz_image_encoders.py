@@ -1,6 +1,6 @@
-# --------------------------------------------------------
-# PCA Visualization of UniCeption Image Encoders
-# --------------------------------------------------------
+"""
+PCA Visualization of UniCeption Image Encoders
+"""
 import os
 import random
 from functools import lru_cache

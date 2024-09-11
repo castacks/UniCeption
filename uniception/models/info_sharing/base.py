@@ -1,6 +1,7 @@
-# --------------------------------------------------------
-# Base Information Sharing Class for UniCeption
-# --------------------------------------------------------
+"""
+Base Information Sharing Class for UniCeption
+"""
+
 import torch.nn as nn
 from dataclasses import dataclass
 from typing import List, Optional

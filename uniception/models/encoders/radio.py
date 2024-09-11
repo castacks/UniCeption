@@ -1,6 +1,7 @@
-# --------------------------------------------------------
-# Encoder Class for RADIO (Nvidia)
-# --------------------------------------------------------
+"""
+Encoder Class for RADIO (Nvidia)
+"""
+
 import torch
 from typing import Optional
 
