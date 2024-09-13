@@ -76,6 +76,7 @@ class MultiViewCrossAttentionTransformer(UniCeptionInfoSharingBase):
         mlp_layer: nn.Module = Mlp,
         custom_positional_encoding: Callable = None,
         norm_cross_tokens: bool = True,
+        pretrained_checkpoint_path: str = None,
         *args,
         **kwargs,
     ):
@@ -101,6 +102,7 @@ class MultiViewCrossAttentionTransformer(UniCeptionInfoSharingBase):
             mlp_layer (nn.Module): MLP layer (default: Mlp)
             custom_positional_encoding (Callable): Custom positional encoding function (default: None)
             norm_cross_tokens (bool): Whether to normalize cross tokens (default: True)
+            pretrained_checkpoint_path (str, optional): Path to the pretrained checkpoint. (default: None)
         """
         # Initialize the base class
         super().__init__(name=name, size=size, *args, **kwargs)
@@ -123,6 +125,7 @@ class MultiViewCrossAttentionTransformer(UniCeptionInfoSharingBase):
         self.mlp_layer = mlp_layer
         self.custom_positional_encoding = custom_positional_encoding
         self.norm_cross_tokens = norm_cross_tokens
+        self.pretrained_checkpoint_path = pretrained_checkpoint_path
 
         # Initialize the projection layer for input embeddings
         if self.input_embed_dim != self.dim:
@@ -131,7 +134,7 @@ class MultiViewCrossAttentionTransformer(UniCeptionInfoSharingBase):
             self.proj_embed = nn.Identity()
 
         # Initialize the cross-attention blocks for a single view
-        self.cross_attention_blocks = nn.ModuleList(
+        cross_attention_blocks = nn.ModuleList(
             [
                 CrossAttentionBlock(
                     dim=self.dim,
@@ -154,9 +157,9 @@ class MultiViewCrossAttentionTransformer(UniCeptionInfoSharingBase):
         )
 
         # Copy the cross-attention blocks for all other views
-        self.multi_view_branches = nn.ModuleList([self.cross_attention_blocks])
+        self.multi_view_branches = nn.ModuleList([cross_attention_blocks])
         for _ in range(1, self.num_views):
-            self.multi_view_branches.append(deepcopy(self.cross_attention_blocks))
+            self.multi_view_branches.append(deepcopy(cross_attention_blocks))
 
         # Initialize the final normalization layer
         self.norm = self.norm_layer(self.dim)
@@ -164,6 +167,33 @@ class MultiViewCrossAttentionTransformer(UniCeptionInfoSharingBase):
         # Initialize the position getter for patch positions if required
         if self.custom_positional_encoding is not None:
             self.position_getter = PositionGetter()
+
+        # Initialize random weights
+        self.initialize_weights()
+
+        # Load pretrained weights if provided
+        if self.pretrained_checkpoint_path is not None:
+            print(
+                f"Loading pretrained multi-view cross-attention transformer weights from {self.pretrained_checkpoint_path} ..."
+            )
+            ckpt = torch.load(self.pretrained_checkpoint_path, weights_only=False)
+            print(self.load_state_dict(ckpt["model"]))
+
+    def initialize_weights(self):
+        "Initialize weights of the transformer."
+        # Linears and layer norms
+        self.apply(self._init_weights)
+
+    def _init_weights(self, m):
+        "Initialize the transformer linear and layer norm weights."
+        if isinstance(m, nn.Linear):
+            # We use xavier_uniform following official JAX ViT:
+            torch.nn.init.xavier_uniform_(m.weight)
+            if isinstance(m, nn.Linear) and m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+        elif isinstance(m, nn.LayerNorm):
+            nn.init.constant_(m.bias, 0)
+            nn.init.constant_(m.weight, 1.0)
 
     def forward(
         self,
@@ -276,6 +306,7 @@ class MultiViewCrossAttentionTransformerIFR(MultiViewCrossAttentionTransformer, 
         mlp_layer: nn.Module = Mlp,
         custom_positional_encoding: Callable = None,
         norm_cross_tokens: bool = True,
+        pretrained_checkpoint_path: str = None,
         indices: Optional[Union[int, List[int]]] = None,
         norm_intermediate: bool = True,
         intermediates_only: bool = False,
@@ -305,6 +336,7 @@ class MultiViewCrossAttentionTransformerIFR(MultiViewCrossAttentionTransformer, 
             mlp_layer (nn.Module): MLP layer (default: Mlp)
             custom_positional_encoding (Callable): Custom positional encoding function (default: None)
             norm_cross_tokens (bool): Whether to normalize cross tokens (default: True)
+            pretrained_checkpoint_path (str, optional): Path to the pretrained checkpoint. (default: None)
             indices (Optional[Union[int, List[int]]], optional): Indices of the layers to return. Defaults to None. Options:
             - None: Return all intermediate layers.
             - int: Return the last n layers.
@@ -334,6 +366,7 @@ class MultiViewCrossAttentionTransformerIFR(MultiViewCrossAttentionTransformer, 
             mlp_layer=mlp_layer,
             custom_positional_encoding=custom_positional_encoding,
             norm_cross_tokens=norm_cross_tokens,
+            pretrained_checkpoint_path=pretrained_checkpoint_path,
             *args,
             **kwargs,
         )
@@ -567,3 +600,47 @@ if __name__ == "__main__":
         ), "Final features and intermediate features (last layer) must be same."
 
     print("All Intermediate Feature Returner Tests passed!")
+
+    # # Load checkpoint for CroCo
+    # checkpoint_path = '/ocean/projects/cis220039p/nkeetha/code/AnyMap/checkpoints/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth'
+    # checkpoint = torch.load(checkpoint_path, weights_only=False)
+    # filtered_checkpoint = checkpoint['model']
+    # filtered_checkpoint = {k: v for k, v in filtered_checkpoint.items() if 'dec' in k}
+    # duplicate_checkpoint = {}
+    # if not any(k.startswith('dec_blocks2') for k in filtered_checkpoint):
+    #     print("Duplicating dec_blocks to dec_blocks2")
+    #     for key, value in filtered_checkpoint.items():
+    #         if key.startswith('dec_blocks'):
+    #             duplicate_checkpoint[key.replace('dec_blocks', 'dec_blocks2')] = value
+    #     filtered_checkpoint = {**filtered_checkpoint, **duplicate_checkpoint}
+    # new_checkpoint = {}
+    # for k, v in filtered_checkpoint.items():
+    #     if 'decoder_embed' in k:
+    #         new_key = k.replace('decoder_embed', 'proj_embed')
+    #         new_checkpoint[new_key] = v
+    #     elif 'dec_blocks.' in k:
+    #         new_key = k.replace('dec_blocks.', 'multi_view_branches.0.')
+    #         new_checkpoint[new_key] = v
+    #     elif 'dec_blocks2.' in k:
+    #         new_key = k.replace('dec_blocks2.', 'multi_view_branches.1.')
+    #         new_checkpoint[new_key] = v
+    #     elif 'dec_norm' in k:
+    #         new_key = k.replace('dec_norm', 'norm')
+    #         new_checkpoint[new_key] = v
+
+    # # Init model
+    # model = MultiViewCrossAttentionTransformerIFR(
+    #     name="MV-CAT-IFR",
+    #     input_embed_dim=1024,
+    #     num_views=2,
+    #     indices=[12*2//4, 12*3//4],
+    #     norm_intermediate=False,
+    # )
+
+    # # Load new checkpoint
+    # print(model.load_state_dict(new_checkpoint))
+
+    # # Save the checkpoint
+    # save_checkpoint = {}
+    # save_checkpoint['model'] = model.state_dict()
+    # torch.save(save_checkpoint, '/ocean/projects/cis220039p/nkeetha/code/UniCeption/checkpoints/info_sharing/cross_attn_transformer/Two_View_Cross_Attention_Transformer_MASt3R.pth')

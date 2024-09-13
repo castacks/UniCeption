@@ -1,5 +1,5 @@
 """
-PCA Visualization of UniCeption Image Encoders
+PCA Visualization of UniCeption Image Encoders + Multi-View Cross Attention Transformers
 """
 
 import os
@@ -14,73 +14,111 @@ import torch.nn.functional as F
 from matplotlib import pyplot as plt
 from PIL import Image
 from sklearn.decomposition import PCA
+
 from uniception.models.encoders import *
 from uniception.models.encoders.image_normalizations import *
+from uniception.models.libs.croco.pos_embed import get_2d_sincos_pos_embed, RoPE2D
+from uniception.models.info_sharing.cross_attention_transformer import (
+    MultiViewCrossAttentionTransformerIFR,
+    MultiViewCrossAttentionTransformerInput,
+)
 
 
-class TestEncoders:
+def _make_mv_cross_attention_transformer_test(model_str: str, **kwargs):
+    current_file_path = os.path.abspath(__file__)
+    relative_checkpoint_path = os.path.join(
+        os.path.dirname(current_file_path), "../../../checkpoints/info_sharing/cross_attn_transformer"
+    )
+    rope = RoPE2D(float(100))
+    if model_str == "croco":
+        return MultiViewCrossAttentionTransformerIFR(
+            name="croco_base_decoder",
+            input_embed_dim=1024,
+            num_views=2,
+            indices=[12 * 2 // 4, 12 * 3 // 4],
+            norm_intermediate=False,
+            custom_positional_encoding=rope,
+            pretrained_checkpoint_path=f"{relative_checkpoint_path}/Two_View_Cross_Attention_Transformer_CroCo.pth",
+            **kwargs,
+        )
+    elif model_str == "dust3r_224":
+        return MultiViewCrossAttentionTransformerIFR(
+            name="dust3r_224_base_decoder",
+            input_embed_dim=1024,
+            num_views=2,
+            indices=[12 * 2 // 4, 12 * 3 // 4],
+            norm_intermediate=False,
+            custom_positional_encoding=rope,
+            pretrained_checkpoint_path=f"{relative_checkpoint_path}/Two_View_Cross_Attention_Transformer_DUSt3R_224_linear.pth",
+            **kwargs,
+        )
+    elif model_str == "dust3r_512":
+        return MultiViewCrossAttentionTransformerIFR(
+            name="dust3r_512_base_decoder",
+            input_embed_dim=1024,
+            num_views=2,
+            indices=[12 * 2 // 4, 12 * 3 // 4],
+            norm_intermediate=False,
+            custom_positional_encoding=rope,
+            pretrained_checkpoint_path=f"{relative_checkpoint_path}/Two_View_Cross_Attention_Transformer_DUSt3R_512_linear.pth",
+            **kwargs,
+        )
+    elif model_str == "dust3r_512_dpt":
+        return MultiViewCrossAttentionTransformerIFR(
+            name="dust3r_512_dpt_base_decoder",
+            input_embed_dim=1024,
+            num_views=2,
+            indices=[12 * 2 // 4, 12 * 3 // 4],
+            norm_intermediate=False,
+            custom_positional_encoding=rope,
+            pretrained_checkpoint_path=f"{relative_checkpoint_path}/Two_View_Cross_Attention_Transformer_DUSt3R_512_dpt.pth",
+            **kwargs,
+        )
+    elif model_str == "mast3r_512":
+        return MultiViewCrossAttentionTransformerIFR(
+            name="mast3r_512_base_decoder",
+            input_embed_dim=1024,
+            num_views=2,
+            indices=[12 * 2 // 4, 12 * 3 // 4],
+            norm_intermediate=False,
+            custom_positional_encoding=rope,
+            pretrained_checkpoint_path=f"{relative_checkpoint_path}/Two_View_Cross_Attention_Transformer_MASt3R.pth",
+            **kwargs,
+        )
+
+
+class TestMultiViewTransformers:
 
     def __init__(self, pca_save_folder, *args, **kwargs):
-        super(TestEncoders, self).__init__(*args, **kwargs)
+        super(TestMultiViewTransformers, self).__init__(*args, **kwargs)
 
         self.pca_save_folder = pca_save_folder
 
         self.norm_types = IMAGE_NORMALIZATION_DICT.keys()
 
-        self.encoders = [
+        self.models = [
             "croco",
             "dust3r_224",
             "dust3r_512",
             "dust3r_512_dpt",
             "mast3r_512",
-            "dinov2_large",
-            "dinov2_large_reg",
-            "dinov2_large_dav2",
-            "dinov2_giant",
-            "dinov2_giant_reg",
-            "radio_v2.5-b",
-            "radio_v2.5-l",
-            "e-radio_v2",
         ]
 
-        self.encoder_configs = [{}] * len(self.encoders)
+        self.model_configs = [{}] * len(self.models)
 
     def inference_encoder(self, encoder, input):
         return encoder(input)
 
-    def visualize_all_encoders(self):
-        for encoder, encoder_config in zip(self.encoders, self.encoder_configs):
-            encoder = _make_encoder_test(encoder, **encoder_config)
-            self._visualize_encoder_features_consistency(encoder, (224, 224))
+    def inference_info_sharing(self, info_sharing, input):
+        return info_sharing(input)
 
-    def _visualize_encoder_features(self, encoder, image_size: Tuple[int, int]):
-        img, viz_img = self._get_example_input(image_size, encoder.data_norm_type, return_viz_img=True)
-        # input and output of the encoder
-        encoder_input: ViTEncoderInput = ViTEncoderInput(
-            data_norm_type=encoder.data_norm_type,
-            image=img,
-        )
+    def visualize_all_models(self):
+        for model, model_config in zip(self.models, self.model_configs):
+            encoder = _make_encoder_test(model, **model_config)
+            info_sharing = _make_mv_cross_attention_transformer_test(model, **model_config)
+            self._visualize_model_features_consistency(encoder, info_sharing, (224, 224))
 
-        encoder_output = self.inference_encoder(encoder, encoder_input)
-        encoder_output = encoder_output.features
-
-        self.assertTrue(isinstance(encoder_output, torch.Tensor))
-
-        # visualize the features
-        pca_viz = get_pca_map(encoder_output.permute(0, 2, 3, 1), image_size, return_pca_stats=False)
-
-        # plot the input image and the PCA features
-        fig, axs = plt.subplots(1, 2, figsize=(12, 6))
-        axs[0].imshow(viz_img)
-        axs[0].set_title("Input Image")
-        axs[0].axis("off")
-        axs[1].imshow(pca_viz)
-        axs[1].set_title(f"PCA Features of {encoder.name}")
-        axs[1].axis("off")
-        plt.savefig(f"{self.pca_save_folder}/pca_{encoder.name}.png", bbox_inches="tight")
-        plt.close()
-
-    def _visualize_encoder_features_consistency(self, encoder, image_size: Tuple[int, int]):
+    def _visualize_model_features_consistency(self, encoder, info_sharing, image_size: Tuple[int, int]):
 
         img0, viz_img0 = self._get_example_input(
             image_size, encoder.data_norm_type, img_selection=1, return_viz_img=True
@@ -105,8 +143,14 @@ class TestEncoders:
         encoder_output1 = self.inference_encoder(encoder, encoder_input1)
         encoder_output1 = encoder_output1.features
 
+        # pass the encoder outputs to the info sharing model
+        multi_view_features = [encoder_output0, encoder_output1]
+        info_sharing_input = MultiViewCrossAttentionTransformerInput(features=multi_view_features)
+        info_sharing_output = self.inference_info_sharing(info_sharing, info_sharing_input)
+        final_layer_multi_view_features = info_sharing_output[0].features
+
         # get a common PCA codec
-        cat_feats = torch.cat([encoder_output0, encoder_output1], dim=3)
+        cat_feats = torch.cat(final_layer_multi_view_features, dim=3)
 
         pca_viz = get_pca_map(cat_feats.permute(0, 2, 3, 1), (image_size[0], image_size[1] * 2), return_pca_stats=True)
 
@@ -119,7 +163,7 @@ class TestEncoders:
         axs[0].set_title("Input Images")
         axs[0].axis("off")
         axs[1].imshow(pca_viz[0])
-        axs[1].set_title(f"PCA Features of {encoder.name}")
+        axs[1].set_title(f"PCA Features of {encoder.name} + Base Decoder")
         axs[1].axis("off")
         plt.savefig(f"{self.pca_save_folder}/multi_pca_{encoder.name}.png", bbox_inches="tight")
         plt.close()
@@ -283,13 +327,16 @@ if __name__ == "__main__":
 
     # Create local directory for storing the PCA images
     current_file_path = os.path.abspath(__file__)
-    relative_pca_image_folder = os.path.join(os.path.dirname(current_file_path), "../../../local/encoders/pca_images")
+    relative_pca_image_folder = os.path.join(
+        os.path.dirname(current_file_path), "../../../local/info_sharing/pca_images"
+    )
     os.makedirs(relative_pca_image_folder, exist_ok=True)
 
     # Initialize the test class
-    test = TestEncoders(pca_save_folder=relative_pca_image_folder)
+    test = TestMultiViewTransformers(pca_save_folder=relative_pca_image_folder)
 
-    # Visualize the PCA of all encoders
-    test.visualize_all_encoders()
+    with torch.no_grad():
+        # Visualize the PCA of all models
+        test.visualize_all_models()
 
-    print(f"The PCA visualizations of all encoders are saved successfully to {relative_pca_image_folder}!")
+    print(f"The PCA visualizations of all models are saved successfully to {relative_pca_image_folder}!")
