@@ -34,6 +34,10 @@ Please refer to the `uniception/models/encoders` directory for the supported enc
 
 Please refer to the `uniception/models/info_sharing` directory for the supported information sharing blocks.
 
+## Prediction Heads
+
+Please refer to the `uniception/models/prediction_heads` directory for the supported information sharing blocks.
+
 ## Developer Guidelines
 
 Please follow these guidelines when contributing to UniCeption:
