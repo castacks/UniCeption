@@ -30,6 +30,10 @@ pip install -e .
 
 Please refer to the `uniception/models/encoders` directory for the supported encoders and documentation for adding new encoders.
 
+## Information Sharing Blocks
+
+Please refer to the `uniception/models/info_sharing` directory for the supported information sharing blocks.
+
 ## Developer Guidelines
 
 Please follow these guidelines when contributing to UniCeption:

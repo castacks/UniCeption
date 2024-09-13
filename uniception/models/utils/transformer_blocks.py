@@ -100,7 +100,7 @@ class Attention(nn.Module):
         proj_drop: float = 0.0,
         norm_layer: nn.Module = nn.LayerNorm,
         custom_positional_encoding: Callable = None,
-    ) -> None:
+    ):
         """
         Initialize the Attention layer.
 
@@ -184,7 +184,7 @@ class CrossAttention(nn.Module):
         proj_drop: float = 0.0,
         norm_layer: nn.Module = nn.LayerNorm,
         custom_positional_encoding: Callable = None,
-    ) -> None:
+    ):
         """
         Initialize the Cross-Attention layer.
 
@@ -281,7 +281,7 @@ class LayerScale(nn.Module):
         dim: int,
         init_values: float = 1e-5,
         inplace: bool = False,
-    ) -> None:
+    ):
         """
         Initialize the Layer Scale layer
 
@@ -317,7 +317,7 @@ class SelfAttentionBlock(nn.Module):
         norm_layer: nn.Module = nn.LayerNorm,
         mlp_layer: nn.Module = Mlp,
         custom_positional_encoding: Callable = None,
-    ) -> None:
+    ):
         """
         Initialize the Self-Attention Block.
 
@@ -402,7 +402,7 @@ class CrossAttentionBlock(nn.Module):
         mlp_layer: nn.Module = Mlp,
         custom_positional_encoding: Callable = None,
         norm_cross_tokens: bool = True,
-    ) -> None:
+    ):
         """
         Initialize the Cross-Attention Block.
 
