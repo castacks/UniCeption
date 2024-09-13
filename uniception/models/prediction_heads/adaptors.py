@@ -143,6 +143,49 @@ class DepthAdaptor(UniCeptionAdaptorBase):
 
         return RegressionAdaptorOutput(value=output_depth)
 
+class PointMapAdaptor(UniCeptionAdaptorBase):
+    def __init__(self, name: str, mode: str, vmin: float = -np.inf, vmax: float = np.inf, *args, **kwargs):
+        """
+        Adaptor for the Depth head in UniCeption.
+        """
+        super().__init__(name, required_channels=1, *args, **kwargs)
+
+        self.mode = mode
+        self.vmin = vmin
+        self.vmax = vmax
+
+        self.no_bounds = (vmin == -float("inf")) and (vmax == float("inf"))
+        assert self.no_bounds
+
+    def forward(self, adaptor_input: AdaptorInput):
+        """
+        Forward pass for the PointMapAdaptor.
+
+        Args:
+            adaptor_input (AdaptorInput): Input to the adaptor.
+        Returns:
+            AdaptorOutput: Output of the adaptor.
+        """
+        xyz = adaptor_input.adaptor_feature
+        mode, vmin, vmax = self.mode, self.vmin, self.vmax
+
+        no_bounds = (vmin == -float('inf')) and (vmax == float('inf'))
+        assert no_bounds
+
+        if mode == 'linear':
+            if no_bounds:
+                return RegressionAdaptorOutput(value=xyz)  # [-inf, +inf]
+            return RegressionAdaptorOutput(value=xyz.clip(min=vmin, max=vmax))
+
+        # distance to origin
+        d = xyz.norm(dim=1, keepdim=True)
+        xyz = xyz / d.clip(min=1e-8)
+
+        if mode == 'square':
+            return RegressionAdaptorOutput(value=xyz * d.square())
+
+        if mode == 'exp':
+            return RegressionAdaptorOutput(value=xyz * torch.expm1(d))
 
 class ConfidenceAdaptor(UniCeptionAdaptorBase):
     def __init__(
@@ -190,10 +233,7 @@ class ConfidenceAdaptor(UniCeptionAdaptorBase):
         x = adaptor_input.adaptor_feature
 
         if self.confidence_type == "exp":
-            confidence = torch.exp(x)
-
-            if not (self.vmin == -np.inf and self.vmax == np.inf):
-                confidence = torch.clamp(confidence, self.vmin, self.vmax)
+            confidence = self.vmin + x.exp().clip(max=self.vmax - self.vmin)
 
             return RegressionAdaptorOutput(value=confidence)
 
