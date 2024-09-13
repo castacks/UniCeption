@@ -135,7 +135,7 @@ class CroCoEncoder(UniCeptionViTEncoderBase):
         self.apply(self._init_weights)
 
     def _init_weights(self, m):
-        "Initialize of the transformer encoder weights"
+        "Initialize the transformer encoder weights"
         if isinstance(m, nn.Linear):
             # We use xavier_uniform following official JAX ViT:
             torch.nn.init.xavier_uniform_(m.weight)
