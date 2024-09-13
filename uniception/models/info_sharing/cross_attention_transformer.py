@@ -22,14 +22,14 @@ class PositionGetter(object):
     def __init__(self):
         "Initialize the position getter."
         self.cache_positions = {}
-        
+
     def __call__(self, b, h, w, device):
         "Get the positions for a given batch size, height, and width. Uses caching."
-        if not (h,w) in self.cache_positions:
+        if not (h, w) in self.cache_positions:
             x = torch.arange(w, device=device)
             y = torch.arange(h, device=device)
-            self.cache_positions[h,w] = torch.cartesian_prod(y, x) # (h, w, 2)
-        pos = self.cache_positions[h,w].view(1, h*w, 2).expand(b, -1, 2).clone()
+            self.cache_positions[h, w] = torch.cartesian_prod(y, x)  # (h, w, 2)
+        pos = self.cache_positions[h, w].view(1, h * w, 2).expand(b, -1, 2).clone()
 
         return pos
 
@@ -39,6 +39,7 @@ class MultiViewCrossAttentionTransformerInput(InfoSharingInput):
     """
     Input class for Multi-View Cross-Attention Transformer.
     """
+
     features: List[Float[Tensor, "batch input_embed_dim feat_height feat_width"]]
 
 
@@ -47,6 +48,7 @@ class MultiViewCrossAttentionTransformerOutput(InfoSharingOutput):
     """
     Output class for Multi-View Cross-Attention Transformer.
     """
+
     features: List[Float[Tensor, "batch transformer_embed_dim feat_height feat_width"]]
 
 
@@ -127,17 +129,30 @@ class MultiViewCrossAttentionTransformer(UniCeptionInfoSharingBase):
             self.proj_embed = nn.Linear(self.input_embed_dim, self.dim, bias=True)
         else:
             self.proj_embed = nn.Identity()
-        
+
         # Initialize the cross-attention blocks for a single view
         self.cross_attention_blocks = nn.ModuleList(
-            [CrossAttentionBlock(dim=self.dim, num_heads=self.num_heads, mlp_ratio=self.mlp_ratio,
-                                 qkv_bias=self.qkv_bias, qk_norm=self.qk_norm, proj_drop=self.proj_drop,
-                                 attn_drop=self.attn_drop, init_values=self.init_values,
-                                 drop_path=self.drop_path, act_layer=self.act_layer, norm_layer=self.norm_layer,
-                                 mlp_layer=self.mlp_layer, custom_positional_encoding=self.custom_positional_encoding,
-                                 norm_cross_tokens=self.norm_cross_tokens) for _ in range(self.depth)]
+            [
+                CrossAttentionBlock(
+                    dim=self.dim,
+                    num_heads=self.num_heads,
+                    mlp_ratio=self.mlp_ratio,
+                    qkv_bias=self.qkv_bias,
+                    qk_norm=self.qk_norm,
+                    proj_drop=self.proj_drop,
+                    attn_drop=self.attn_drop,
+                    init_values=self.init_values,
+                    drop_path=self.drop_path,
+                    act_layer=self.act_layer,
+                    norm_layer=self.norm_layer,
+                    mlp_layer=self.mlp_layer,
+                    custom_positional_encoding=self.custom_positional_encoding,
+                    norm_cross_tokens=self.norm_cross_tokens,
+                )
+                for _ in range(self.depth)
+            ]
         )
-        
+
         # Copy the cross-attention blocks for all other views
         self.multi_view_branches = nn.ModuleList([self.cross_attention_blocks])
         for _ in range(1, self.num_views):
@@ -149,7 +164,7 @@ class MultiViewCrossAttentionTransformer(UniCeptionInfoSharingBase):
         # Initialize the position getter for patch positions if required
         if self.custom_positional_encoding is not None:
             self.position_getter = PositionGetter()
-    
+
     def forward(
         self,
         model_input: MultiViewCrossAttentionTransformerInput,
@@ -166,28 +181,38 @@ class MultiViewCrossAttentionTransformer(UniCeptionInfoSharingBase):
             MultiViewCrossAttentionTransformerOutput: Output of the model post information sharing.
         """
         # Check that the number of views matches the input and the features are of expected shape
-        assert len(model_input.features) == self.num_views, f"Expected {self.num_views} views, got {len(model_input.features)}"
-        assert all(view_features.shape[1] == self.input_embed_dim for view_features in model_input.features), \
-            f"All views must have input dimension {self.input_embed_dim}"
-        assert all(view_features.ndim == 4 for view_features in model_input.features), \
-            "All views must have 4 dimensions (N, C, H, W)"
-        
+        assert (
+            len(model_input.features) == self.num_views
+        ), f"Expected {self.num_views} views, got {len(model_input.features)}"
+        assert all(
+            view_features.shape[1] == self.input_embed_dim for view_features in model_input.features
+        ), f"All views must have input dimension {self.input_embed_dim}"
+        assert all(
+            view_features.ndim == 4 for view_features in model_input.features
+        ), "All views must have 4 dimensions (N, C, H, W)"
+
         # Initialize the multi-view features from the model input
         multi_view_features = model_input.features
-        
+
         # Resize the multi-view features from NCHW to NLC
         batch_size, _, height, width = multi_view_features[0].shape
-        multi_view_features = [view_features.permute(0, 2, 3, 1).reshape(batch_size, height * width, self.input_embed_dim).contiguous() for view_features in multi_view_features]
-        
+        multi_view_features = [
+            view_features.permute(0, 2, 3, 1).reshape(batch_size, height * width, self.input_embed_dim).contiguous()
+            for view_features in multi_view_features
+        ]
+
         # Create patch positions for each view if custom positional encoding is used
         if self.custom_positional_encoding is not None:
-            multi_view_positions = [self.position_getter(batch_size, height, width, view_features.device) for view_features in multi_view_features]
+            multi_view_positions = [
+                self.position_getter(batch_size, height, width, view_features.device)
+                for view_features in multi_view_features
+            ]
         else:
             multi_view_positions = [None] * self.num_views
-        
+
         # Project input features to the transformer dimension
         multi_view_features = [self.proj_embed(view_features) for view_features in multi_view_features]
-        
+
         # Pass through each view's cross-attention blocks
         # Loop over the depth of the transformer
         for depth_idx in range(self.depth):
@@ -201,20 +226,29 @@ class MultiViewCrossAttentionTransformer(UniCeptionInfoSharingBase):
                 # Get the positions for the current view
                 view_positions = multi_view_positions[view_idx]
                 # Get the positions for all other views
-                other_views_positions = torch.cat([multi_view_positions[i] for i in range(self.num_views) if i != view_idx], dim=1) if view_positions is not None else None
+                other_views_positions = (
+                    torch.cat([multi_view_positions[i] for i in range(self.num_views) if i != view_idx], dim=1)
+                    if view_positions is not None
+                    else None
+                )
                 # Apply the cross-attention block and update the multi-view features
-                updated_view_features = self.multi_view_branches[view_idx][depth_idx](view_features, other_views_features, view_positions, other_views_positions)
+                updated_view_features = self.multi_view_branches[view_idx][depth_idx](
+                    view_features, other_views_features, view_positions, other_views_positions
+                )
                 # Keep track of the updated view features
                 updated_multi_view_features.append(updated_view_features)
             # Update the multi-view features for the next depth
             multi_view_features = updated_multi_view_features
-        
+
         # Normalize the output features
         output_multi_view_features = [self.norm(view_features) for view_features in multi_view_features]
 
         # Resize the output multi-view features back to NCHW
-        output_multi_view_features = [view_features.reshape(batch_size, height, width, self.dim).permute(0, 3, 1, 2).contiguous() for view_features in output_multi_view_features]
-        
+        output_multi_view_features = [
+            view_features.reshape(batch_size, height, width, self.dim).permute(0, 3, 1, 2).contiguous()
+            for view_features in output_multi_view_features
+        ]
+
         return MultiViewCrossAttentionTransformerOutput(features=output_multi_view_features)
 
 
@@ -246,7 +280,7 @@ class MultiViewCrossAttentionTransformerIFR(MultiViewCrossAttentionTransformer, 
         norm_intermediate: bool = True,
         intermediates_only: bool = False,
         *args,
-        **kwargs,    
+        **kwargs,
     ):
         """
         Initialize the Multi-View Cross-Attention Transformer for information sharing across image features from different views.
@@ -309,11 +343,14 @@ class MultiViewCrossAttentionTransformerIFR(MultiViewCrossAttentionTransformer, 
             norm_intermediate=norm_intermediate,
             intermediates_only=intermediates_only,
         )
-    
+
     def forward(
         self,
-        model_input: MultiViewCrossAttentionTransformerInput,    
-    ) -> Union[List[MultiViewCrossAttentionTransformerOutput], Tuple[MultiViewCrossAttentionTransformerOutput, List[MultiViewCrossAttentionTransformerOutput]]]:
+        model_input: MultiViewCrossAttentionTransformerInput,
+    ) -> Union[
+        List[MultiViewCrossAttentionTransformerOutput],
+        Tuple[MultiViewCrossAttentionTransformerOutput, List[MultiViewCrossAttentionTransformerOutput]],
+    ]:
         """
         Forward interface for the Multi-View Cross-Attention Transformer with Intermediate Feature Return.
 
@@ -323,38 +360,48 @@ class MultiViewCrossAttentionTransformerIFR(MultiViewCrossAttentionTransformer, 
                 where each entry corresponds to a different view.
 
         Returns:
-            Union[List[MultiViewCrossAttentionTransformerOutput], Tuple[MultiViewCrossAttentionTransformerOutput, List[MultiViewCrossAttentionTransformerOutput]]]: 
+            Union[List[MultiViewCrossAttentionTransformerOutput], Tuple[MultiViewCrossAttentionTransformerOutput, List[MultiViewCrossAttentionTransformerOutput]]]:
                 Output of the model post information sharing.
                 If intermediates_only is True, returns a list of intermediate outputs.
                 If intermediates_only is False, returns a tuple of final output and a list of intermediate outputs.
         """
         # Check that the number of views matches the input and the features are of expected shape
-        assert len(model_input.features) == self.num_views, f"Expected {self.num_views} views, got {len(model_input.features)}"
-        assert all(view_features.shape[1] == self.input_embed_dim for view_features in model_input.features), \
-            f"All views must have input dimension {self.input_embed_dim}"
-        assert all(view_features.ndim == 4 for view_features in model_input.features), \
-            "All views must have 4 dimensions (N, C, H, W)"
-        
+        assert (
+            len(model_input.features) == self.num_views
+        ), f"Expected {self.num_views} views, got {len(model_input.features)}"
+        assert all(
+            view_features.shape[1] == self.input_embed_dim for view_features in model_input.features
+        ), f"All views must have input dimension {self.input_embed_dim}"
+        assert all(
+            view_features.ndim == 4 for view_features in model_input.features
+        ), "All views must have 4 dimensions (N, C, H, W)"
+
         # Get the indices of the intermediate features to return
         intermediate_multi_view_features = []
         take_indices, _ = feature_take_indices(self.depth, self.indices)
-        
+
         # Initialize the multi-view features from the model input
         multi_view_features = model_input.features
-        
+
         # Resize the multi-view features from NCHW to NLC
         batch_size, _, height, width = multi_view_features[0].shape
-        multi_view_features = [view_features.permute(0, 2, 3, 1).reshape(batch_size, height * width, self.input_embed_dim).contiguous() for view_features in multi_view_features]
-        
+        multi_view_features = [
+            view_features.permute(0, 2, 3, 1).reshape(batch_size, height * width, self.input_embed_dim).contiguous()
+            for view_features in multi_view_features
+        ]
+
         # Create patch positions for each view if custom positional encoding is used
         if self.custom_positional_encoding is not None:
-            multi_view_positions = [self.position_getter(batch_size, height, width, view_features.device) for view_features in multi_view_features]
+            multi_view_positions = [
+                self.position_getter(batch_size, height, width, view_features.device)
+                for view_features in multi_view_features
+            ]
         else:
             multi_view_positions = [None] * self.num_views
-        
+
         # Project input features to the transformer dimension
         multi_view_features = [self.proj_embed(view_features) for view_features in multi_view_features]
-        
+
         # Pass through each view's cross-attention blocks
         # Loop over the depth of the transformer
         for depth_idx in range(self.depth):
@@ -368,9 +415,15 @@ class MultiViewCrossAttentionTransformerIFR(MultiViewCrossAttentionTransformer, 
                 # Get the positions for the current view
                 view_positions = multi_view_positions[view_idx]
                 # Get the positions for all other views
-                other_views_positions = torch.cat([multi_view_positions[i] for i in range(self.num_views) if i != view_idx], dim=1) if view_positions is not None else None
+                other_views_positions = (
+                    torch.cat([multi_view_positions[i] for i in range(self.num_views) if i != view_idx], dim=1)
+                    if view_positions is not None
+                    else None
+                )
                 # Apply the cross-attention block and update the multi-view features
-                updated_view_features = self.multi_view_branches[view_idx][depth_idx](view_features, other_views_features, view_positions, other_views_positions)
+                updated_view_features = self.multi_view_branches[view_idx][depth_idx](
+                    view_features, other_views_features, view_positions, other_views_positions
+                )
                 # Keep track of the updated view features
                 updated_multi_view_features.append(updated_view_features)
             # Update the multi-view features for the next depth
@@ -378,25 +431,37 @@ class MultiViewCrossAttentionTransformerIFR(MultiViewCrossAttentionTransformer, 
             # Append the intermediate features if required
             if depth_idx in take_indices:
                 # Normalize the intermediate features with final norm layer if enabled
-                intermediate_multi_view_features.append([self.norm(view_features) for view_features in multi_view_features] if self.norm_intermediate else multi_view_features)
-        
+                intermediate_multi_view_features.append(
+                    [self.norm(view_features) for view_features in multi_view_features]
+                    if self.norm_intermediate
+                    else multi_view_features
+                )
+
         # Reshape the intermediate features and convert to MultiViewCrossAttentionTransformerOutput class
         for idx in range(len(intermediate_multi_view_features)):
-            intermediate_multi_view_features[idx] = [view_features.reshape(batch_size, height, width, self.dim).permute(0, 3, 1, 2).contiguous() for view_features in intermediate_multi_view_features[idx]]
-            intermediate_multi_view_features[idx] = MultiViewCrossAttentionTransformerOutput(features=intermediate_multi_view_features[idx])
-        
+            intermediate_multi_view_features[idx] = [
+                view_features.reshape(batch_size, height, width, self.dim).permute(0, 3, 1, 2).contiguous()
+                for view_features in intermediate_multi_view_features[idx]
+            ]
+            intermediate_multi_view_features[idx] = MultiViewCrossAttentionTransformerOutput(
+                features=intermediate_multi_view_features[idx]
+            )
+
         # Return only the intermediate features if enabled
         if self.intermediates_only:
             return intermediate_multi_view_features
-        
+
         # Normalize the output features
         output_multi_view_features = [self.norm(view_features) for view_features in multi_view_features]
 
         # Resize the output multi-view features back to NCHW
-        output_multi_view_features = [view_features.reshape(batch_size, height, width, self.dim).permute(0, 3, 1, 2).contiguous() for view_features in output_multi_view_features]
-        
+        output_multi_view_features = [
+            view_features.reshape(batch_size, height, width, self.dim).permute(0, 3, 1, 2).contiguous()
+            for view_features in output_multi_view_features
+        ]
+
         output_multi_view_features = MultiViewCrossAttentionTransformerOutput(features=output_multi_view_features)
-        
+
         return output_multi_view_features, intermediate_multi_view_features
 
 
@@ -417,28 +482,33 @@ if __name__ == "__main__":
         model_output = model(model_input)
         assert len(model_output.features) == num_views
         assert all(f.shape == (1, model.dim, 14, 14) for f in model_output.features)
-    
+
     # Init multi-view cross-attention transformer with custom positional encoding and run a forward pass
     for num_views in [2, 3, 4]:
         print(f"Testing MultiViewCrossAttentionTransformer with {num_views} views and custom positional encoding ...")
-        model = MultiViewCrossAttentionTransformer(name="MV-CAT", input_embed_dim=1024, num_views=num_views, custom_positional_encoding=dummy_positional_encoding)
+        model = MultiViewCrossAttentionTransformer(
+            name="MV-CAT",
+            input_embed_dim=1024,
+            num_views=num_views,
+            custom_positional_encoding=dummy_positional_encoding,
+        )
         model_input = [torch.rand(1, 1024, 14, 14) for _ in range(num_views)]
         model_input = MultiViewCrossAttentionTransformerInput(features=model_input)
         model_output = model(model_input)
         assert len(model_output.features) == num_views
         assert all(f.shape == (1, model.dim, 14, 14) for f in model_output.features)
-    
+
     print("All multi-view cross-attention transformers initialized and tested successfully!")
-    
+
     # Intermediate Feature Returner Tests
     print("Running Intermediate Feature Returner Tests ...")
 
     # Run the intermediate feature returner with last-n index
     model_intermediate_feature_returner = MultiViewCrossAttentionTransformerIFR(
-        name="MV-CAT-IFR", 
-        input_embed_dim=1024, 
-        num_views=2, 
-        indices=6, # Last 6 layers
+        name="MV-CAT-IFR",
+        input_embed_dim=1024,
+        num_views=2,
+        indices=6,  # Last 6 layers
     )
     model_input = [torch.rand(1, 1024, 14, 14) for _ in range(2)]
     model_input = MultiViewCrossAttentionTransformerInput(features=model_input)
@@ -451,10 +521,10 @@ if __name__ == "__main__":
 
     # Run the intermediate feature returner with specific indices
     model_intermediate_feature_returner = MultiViewCrossAttentionTransformerIFR(
-        name="MV-CAT-IFR", 
-        input_embed_dim=1024, 
-        num_views=2, 
-        indices=[0, 2, 4, 6], # Specific indices
+        name="MV-CAT-IFR",
+        input_embed_dim=1024,
+        num_views=2,
+        indices=[0, 2, 4, 6],  # Specific indices
     )
     model_input = [torch.rand(1, 1024, 14, 14) for _ in range(2)]
     model_input = MultiViewCrossAttentionTransformerInput(features=model_input)
@@ -467,29 +537,33 @@ if __name__ == "__main__":
 
     # Test the normalizing of intermediate features
     model_intermediate_feature_returner = MultiViewCrossAttentionTransformerIFR(
-        name="MV-CAT-IFR", 
-        input_embed_dim=1024, 
-        num_views=2, 
-        indices=[-1], # Last layer
-        norm_intermediate=False, # Disable normalization
+        name="MV-CAT-IFR",
+        input_embed_dim=1024,
+        num_views=2,
+        indices=[-1],  # Last layer
+        norm_intermediate=False,  # Disable normalization
     )
     model_input = [torch.rand(1, 1024, 14, 14) for _ in range(2)]
     model_input = MultiViewCrossAttentionTransformerInput(features=model_input)
     output = model_intermediate_feature_returner(model_input)
     for view_idx in range(2):
-        assert not torch.equal(output[0].features[view_idx], output[1][-1].features[view_idx]), "Final features and intermediate features (last layer) must be different."
-    
+        assert not torch.equal(
+            output[0].features[view_idx], output[1][-1].features[view_idx]
+        ), "Final features and intermediate features (last layer) must be different."
+
     model_intermediate_feature_returner = MultiViewCrossAttentionTransformerIFR(
-        name="MV-CAT-IFR", 
-        input_embed_dim=1024, 
-        num_views=2, 
-        indices=[-1], # Last layer
+        name="MV-CAT-IFR",
+        input_embed_dim=1024,
+        num_views=2,
+        indices=[-1],  # Last layer
         norm_intermediate=True,
     )
     model_input = [torch.rand(1, 1024, 14, 14) for _ in range(2)]
     model_input = MultiViewCrossAttentionTransformerInput(features=model_input)
     output = model_intermediate_feature_returner(model_input)
     for view_idx in range(2):
-        assert torch.equal(output[0].features[view_idx], output[1][-1].features[view_idx]), "Final features and intermediate features (last layer) must be same."
-    
+        assert torch.equal(
+            output[0].features[view_idx], output[1][-1].features[view_idx]
+        ), "Final features and intermediate features (last layer) must be same."
+
     print("All Intermediate Feature Returner Tests passed!")

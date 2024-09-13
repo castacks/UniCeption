@@ -5,12 +5,17 @@ Base Prediction Head Class for UniCeption
 import torch
 import torch.nn as nn
 from dataclasses import dataclass
-from typing import List, Optional, Dict, Tuple
+from typing import List, Dict, Tuple
 
 
 @dataclass
 class PredictionHeadInput:
     pass
+
+
+@dataclass
+class PredictionHeadLayeredInput(PredictionHeadInput):
+    list_features: List[torch.Tensor]
 
 
 @dataclass
