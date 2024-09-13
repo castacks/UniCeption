@@ -36,7 +36,7 @@ Please refer to the `uniception/models/info_sharing` directory for the supported
 
 ## Prediction Heads
 
-Please refer to the `uniception/models/prediction_heads` directory for the supported information sharing blocks.
+Please refer to the `uniception/models/prediction_heads` directory for the supported prediction heads.
 
 ## Developer Guidelines
 
