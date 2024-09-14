@@ -1,27 +1,25 @@
-# --------------------------------------------------------
-# DPT head implementation
-# Downstream heads assume inputs of size BCHW (B: batch, C: channels, H: height, W: width);
-# The DPT head implementation is based on DUSt3R and CroCoV2
-# References: https://github.com/naver/dust3r
-# --------------------------------------------------------
-from dataclasses import dataclass
-from typing import Iterable, List, Optional, Tuple, Union
+"""
+DPT head implementation
+Downstream heads assume inputs of size BCHW (B: batch, C: channels, H: height, W: width);
+The DPT head implementation is based on DUSt3R and CroCoV2
+References: https://github.com/naver/dust3r
+"""
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from dataclasses import dataclass
+from jaxtyping import Float
+from torch import Tensor
+from typing import Iterable, List, Optional, Tuple, Union
+
 from uniception.models.libs.croco.dpt_block import make_fusion_block, make_scratch, pair
 from uniception.models.prediction_heads.base import PredictionHeadLayeredInput, PixelTaskOutput
 
 
 @dataclass
-class DPTFeatureOutput:
-    features_upsampled_8x: torch.Tensor
-
-
-@dataclass
-class DPTProcessorInput:
-    features_upsampled_8x: torch.Tensor
+class DPTFeatureInput:
+    features_upsampled_8x: Float[Tensor, "batch_size dpt_output_feat_dim feat_height_8x feat_width_8x"]
     target_output_shape: Tuple[int, int]
 
 
@@ -159,7 +157,7 @@ class DPTFeature(nn.Module):
             [act_1_postprocess, act_2_postprocess, act_3_postprocess, act_4_postprocess]
         )
 
-    def forward(self, dpt_input: PredictionHeadLayeredInput):
+    def forward(self, dpt_input: PredictionHeadLayeredInput) -> DPTFeatureInput:
         """
         DPT Feature forward pass from 4 layers in the transformer to 8x sampled feature output.
 
@@ -168,7 +166,7 @@ class DPTFeature(nn.Module):
             - list_features: List of 4 BCHW Tensors representing the features from 4 layers of the transformer
 
         Returns:
-            DPTFeatureOutput: Output of the DPT feature head
+            DPTFeatureInput: Output of the DPT feature head
             - features_upsampled_8x: BCHW Tensor representing the 8x upsampled feature.
         """
 
@@ -195,7 +193,9 @@ class DPTFeature(nn.Module):
         path_2 = self.scratch.refinenet2(path_3, layers[1])
         feature_upsampled_8x = self.scratch.refinenet1(path_2, layers[0])
 
-        return DPTFeatureOutput(features_upsampled_8x=feature_upsampled_8x)
+        return DPTFeatureInput(
+            features_upsampled_8x=feature_upsampled_8x, target_output_shape=dpt_input.target_output_shape
+        )
 
 
 # -------------------------------------------------------- DPT Processors --------------------------------------------------------
@@ -234,12 +234,12 @@ class DPTRegressionProcessor(nn.Module):
             nn.Conv2d(hidden_dims[1], output_dim, kernel_size=1, stride=1, padding=0),
         )
 
-    def forward(self, dpt_processor_input: DPTProcessorInput):
+    def forward(self, dpt_processor_input: DPTFeatureInput):
         """
         DPT regression processor, process DPT output into channels to be adapted into regression output.
 
         Args:
-            dpt_processor_input (DPTProcessorInput): Input to the processor
+            dpt_processor_input (DPTFeatureInput): Input to the processor
             - features_upsampled_8x: BCHW Tensor representing the upsampled feature
             - target_output_shape: Tuple of (H, W) representing the target output shape
 
@@ -292,13 +292,13 @@ class DPTSegmentationProcessor(nn.Module):
             nn.Conv2d(hidden_dim, output_dim, kernel_size=1),
         )
 
-    def forward(self, dpt_processor_input: DPTProcessorInput):
+    def forward(self, dpt_processor_input: DPTFeatureInput):
         """
         Forward pass for the DPT segmentation processor, process DPT output into channels
         to be adapted into segmentation mask.
 
         Args:
-            dpt_processor_input (DPTProcessorInput): Input to the processor
+            dpt_processor_input (DPTFeatureInput): Input to the processor
             - features_upsampled_8x: BCHW Tensor representing the upsampled feature
             - target_output_shape: Tuple of (H, W) representing the target output shape
 
@@ -341,11 +341,11 @@ if __name__ == "__main__":
     input_feats[8] = torch.randn(1, 789, *patch_num)
     input_feats[11] = torch.randn(1, 1011, *patch_num)
 
-    output = dpt_feature_output(PredictionHeadLayeredInput(list_features=input_feats))
+    output = dpt_feature_output(PredictionHeadLayeredInput(list_features=input_feats, target_output_shape=image_shape))
 
     postprocess = DPTSegmentationProcessor(input_feature_dim=256, output_dim=3)
 
-    dpt_processor_input = DPTProcessorInput(
+    dpt_processor_input = DPTFeatureInput(
         features_upsampled_8x=output.features_upsampled_8x, target_output_shape=image_shape
     )
 

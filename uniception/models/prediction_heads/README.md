@@ -8,6 +8,7 @@ IntermediateFeatureReturner
 │   ├── DPTRegressionProcessor
 │   │   ├── FlowAdaptor
 │   │   ├── DepthAdaptor
+|   │   ├── PointMapAdaptor
 │   │   ├── ConfidenceAdaptor
 │   │   ├── ValueWithConfidenceAdaptor
 │   │   └── FlowWithConfidenceAdaptor

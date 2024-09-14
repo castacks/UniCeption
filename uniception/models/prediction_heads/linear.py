@@ -1,9 +1,9 @@
-# --------------------------------------------------------
-# Linear head implementation
-# Downstream heads assume inputs of size BCHW (B: batch, C: channels, H: height, W: width);
-# The DPT head implementation is based on DUSt3R and CroCoV2
-# References: https://github.com/naver/dust3r
-# --------------------------------------------------------
+"""
+Linear head implementation
+Downstream heads assume inputs of size BCHW (B: batch, C: channels, H: height, W: width);
+The DPT head implementation is based on DUSt3R and CroCoV2
+References: https://github.com/naver/dust3r
+"""
 
 from dataclasses import dataclass
 from turtle import forward

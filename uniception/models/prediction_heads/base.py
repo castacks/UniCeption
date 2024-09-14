@@ -5,17 +5,20 @@ Base Prediction Head Class for UniCeption
 import torch
 import torch.nn as nn
 from dataclasses import dataclass
+from jaxtyping import Float
+from torch import Tensor
 from typing import List, Dict, Tuple
 
 
 @dataclass
 class PredictionHeadInput:
-    last_feature: torch.Tensor
+    last_feature: Float[Tensor, "batch_size feat_dim feat_height feat_width"]
 
 
 @dataclass
-class PredictionHeadLayeredInput(PredictionHeadInput):
-    list_features: List[torch.Tensor]
+class PredictionHeadLayeredInput:
+    list_features: List[Float[Tensor, "batch_size feat_dim feat_height feat_width"]]
+    target_output_shape: Tuple[int, int]
 
 
 @dataclass
@@ -25,12 +28,12 @@ class PixelTaskOutput:
     with the same spatial resolution as the input image.
     """
 
-    decoded_channels: torch.Tensor
+    decoded_channels: Float[Tensor, "batch_size output_channels height width"]
 
 
 @dataclass
 class AdaptorInput:
-    adaptor_feature: torch.Tensor
+    adaptor_feature: Float[Tensor, "batch_size sliced_channels height width"]
     output_shape_hw: Tuple[int, int]
 
 
@@ -46,19 +49,19 @@ class PredictionHeadOutput:
 
 @dataclass
 class MaskAdaptorOutput:
-    logits: torch.Tensor
-    mask: torch.Tensor
+    logits: Float[Tensor, "batch_size 1 height width"]
+    mask: Float[Tensor, "batch_size 1 height width"]
 
 
 @dataclass
 class RegressionAdaptorOutput:
-    value: torch.Tensor
+    value: Float[Tensor, "batch_size sliced_channels height width"]
 
 
 @dataclass
 class RegressionWithConfidenceAdaptorOutput:
-    value: torch.Tensor
-    confidence: torch.Tensor
+    value: Float[Tensor, "batch_size sliced_channels height width"]
+    confidence: Float[Tensor, "batch_size 1 height width"]
 
 
 class UniCeptionPredictionHeadBase(nn.Module):

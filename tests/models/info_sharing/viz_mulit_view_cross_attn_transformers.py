@@ -335,8 +335,7 @@ if __name__ == "__main__":
     # Initialize the test class
     test = TestMultiViewTransformers(pca_save_folder=relative_pca_image_folder)
 
-    with torch.no_grad():
-        # Visualize the PCA of all models
-        test.visualize_all_models()
+    # Visualize the PCA of all models
+    test.visualize_all_models()
 
     print(f"The PCA visualizations of all models are saved successfully to {relative_pca_image_folder}!")
