@@ -65,6 +65,11 @@ class FlowAdaptor(UniCeptionAdaptorBase):
         """
 
         x = adaptor_input.adaptor_feature
+
+        # check the number of channels to avoid passing BHWC features
+        _, C, _, _ = x.shape
+        assert C == 2, f"FlowAdaptor requires BCHW format with 2 channels, got {C} channels"
+
         output_shape = adaptor_input.output_shape_hw
 
         x_scale, y_scale = self._get_xy_scale(output_shape)
@@ -126,6 +131,10 @@ class DepthAdaptor(UniCeptionAdaptorBase):
         """
         x = adaptor_input.adaptor_feature
 
+        # check the number of channels to avoid passing BHWC features
+        _, C, _, _ = x.shape
+        assert C == 1, f"DepthAdaptor requires BCHW format with 1 channels, got {C} channels"
+
         output_depth = None
 
         if self.mode == "linear":
@@ -142,6 +151,7 @@ class DepthAdaptor(UniCeptionAdaptorBase):
             output_depth = torch.expm1(x)
 
         return RegressionAdaptorOutput(value=output_depth)
+
 
 class PointMapAdaptor(UniCeptionAdaptorBase):
     def __init__(self, name: str, mode: str, vmin: float = -np.inf, vmax: float = np.inf, *args, **kwargs):
@@ -169,10 +179,10 @@ class PointMapAdaptor(UniCeptionAdaptorBase):
         xyz = adaptor_input.adaptor_feature
         mode, vmin, vmax = self.mode, self.vmin, self.vmax
 
-        no_bounds = (vmin == -float('inf')) and (vmax == float('inf'))
+        no_bounds = (vmin == -float("inf")) and (vmax == float("inf"))
         assert no_bounds
 
-        if mode == 'linear':
+        if mode == "linear":
             if no_bounds:
                 return RegressionAdaptorOutput(value=xyz)  # [-inf, +inf]
             return RegressionAdaptorOutput(value=xyz.clip(min=vmin, max=vmax))
@@ -181,11 +191,12 @@ class PointMapAdaptor(UniCeptionAdaptorBase):
         d = xyz.norm(dim=1, keepdim=True)
         xyz = xyz / d.clip(min=1e-8)
 
-        if mode == 'square':
+        if mode == "square":
             return RegressionAdaptorOutput(value=xyz * d.square())
 
-        if mode == 'exp':
+        if mode == "exp":
             return RegressionAdaptorOutput(value=xyz * torch.expm1(d))
+
 
 class ConfidenceAdaptor(UniCeptionAdaptorBase):
     def __init__(

@@ -1,9 +1,7 @@
 # --------------------------------------------------------
 # DPT head implementation
-# Downstream heads assume inputs of size B x N x C (where N is the number of tokens) ;
-# or if it takes as input the output at every layer, the attribute return_all_layers should be set to True
-# the forward function also takes as input a dictionnary img_info with key "height" and "width"
-# for PixelwiseTask, the output will be of dimension B x num_channels x H x W
+# Downstream heads assume inputs of size BCHW (B: batch, C: channels, H: height, W: width);
+# The DPT head implementation is based on DUSt3R and CroCoV2
 # References: https://github.com/naver/dust3r
 # --------------------------------------------------------
 from dataclasses import dataclass
@@ -13,7 +11,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from uniception.models.libs.croco.dpt_block import make_fusion_block, make_scratch, pair
-from uniception.models.prediction_heads.base import PredictionHeadLayeredInput
+from uniception.models.prediction_heads.base import PredictionHeadLayeredInput, PixelTaskOutput
 
 
 @dataclass
@@ -25,11 +23,6 @@ class DPTFeatureOutput:
 class DPTProcessorInput:
     features_upsampled_8x: torch.Tensor
     target_output_shape: Tuple[int, int]
-
-
-@dataclass
-class DPTProcessorOutput:
-    decoded_channels: torch.Tensor
 
 
 # -------------------------------------------------------- DPT Feature --------------------------------------------------------
@@ -251,7 +244,7 @@ class DPTRegressionProcessor(nn.Module):
             - target_output_shape: Tuple of (H, W) representing the target output shape
 
         Returns:
-            DPTProcessorOutput: Output of the processor
+            PixelTaskOutput: Output of the processor
             - decoded_channels: BCHW Tensor representing the regression output
         """
 
@@ -262,7 +255,7 @@ class DPTRegressionProcessor(nn.Module):
         x = F.interpolate(x, size=output_shape, mode="bilinear", align_corners=True)
         x = self.conv2(x)
 
-        return DPTProcessorOutput(decoded_channels=x)
+        return PixelTaskOutput(decoded_channels=x)
 
 
 class DPTSegmentationProcessor(nn.Module):
@@ -310,7 +303,7 @@ class DPTSegmentationProcessor(nn.Module):
             - target_output_shape: Tuple of (H, W) representing the target output shape
 
         Returns:
-            DPTProcessorOutput: Output of the processor
+            PixelTaskOutput: Output of the processor
             - decoded_channels: BCHW Tensor representing the segmentation mask
         """
 
@@ -320,7 +313,7 @@ class DPTSegmentationProcessor(nn.Module):
         x = self.conv(x)
         x = F.interpolate(x, size=output_shape, mode="bilinear", align_corners=True)
 
-        return DPTProcessorOutput(decoded_channels=x)
+        return PixelTaskOutput(decoded_channels=x)
 
 
 if __name__ == "__main__":

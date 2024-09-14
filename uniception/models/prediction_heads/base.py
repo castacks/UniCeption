@@ -10,12 +10,22 @@ from typing import List, Dict, Tuple
 
 @dataclass
 class PredictionHeadInput:
-    pass
+    last_feature: torch.Tensor
 
 
 @dataclass
 class PredictionHeadLayeredInput(PredictionHeadInput):
     list_features: List[torch.Tensor]
+
+
+@dataclass
+class PixelTaskOutput:
+    """
+    PixelTaskOutput have dense pixel-wise output in BCHW format,
+    with the same spatial resolution as the input image.
+    """
+
+    decoded_channels: torch.Tensor
 
 
 @dataclass

@@ -4,15 +4,17 @@
 
 ```
 IntermediateFeatureReturner
-└── DPTFeature
-    ├── DPTRegressionProcessor
-    │   ├── FlowAdaptor
-    │   ├── DepthAdaptor
-    │   ├── ConfidenceAdaptor
-    │   ├── ValueWithConfidenceAdaptor
-    │   └── FlowWithConfidenceAdaptor
-    └── DPTSegmentationProcessor
-        └── MaskAdaptor
+├── DPTFeature
+│   ├── DPTRegressionProcessor
+│   │   ├── FlowAdaptor
+│   │   ├── DepthAdaptor
+│   │   ├── ConfidenceAdaptor
+│   │   ├── ValueWithConfidenceAdaptor
+│   │   └── FlowWithConfidenceAdaptor
+│   └── DPTSegmentationProcessor
+│       └── MaskAdaptor
+└── LinearFeature
+    └── ...(all adaptors)
 ```
 
 The diagram outlines how implemented classes are designed to interact with each other. 
