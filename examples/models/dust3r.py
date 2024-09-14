@@ -322,7 +322,7 @@ class DUSt3R(nn.Module):
         output1["conf"] = self.confidence_adaptor(AdaptorInput(res1_confidence_features, shape1[0]))
         output2["pts3d"] = self.point_map_adaptor(AdaptorInput(res2_pointmap_features, shape2[0]))
         output2["conf"] = self.confidence_adaptor(AdaptorInput(res2_confidence_features, shape2[0]))
-        return res1, res2
+        return output1, output2
 
 
 def log_data_to_rerun(image, depthmap, pose, intrinsics, pts3d, mask, base_name, pts_name):
@@ -425,3 +425,22 @@ if __name__ == "__main__":
 
     res1, res2 = dust3r_model(view1, view2)
     print("Forward pass completed successfully!")
+
+    points1 = res1["pts3d"].value[0].detach().cpu().numpy()
+    points2 = res2["pts3d"].value[0].detach().cpu().numpy()
+
+    # visualize the poitns in open3d
+    import open3d as o3d
+
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(points1.reshape(3, -1).T)
+    pcd.colors = o3d.utility.Vector3dVector(np.array(img0)[..., :3].reshape(-1, 3) / 255)
+
+    pcd2 = o3d.geometry.PointCloud()
+    pcd2.points = o3d.utility.Vector3dVector(points2.reshape(3, -1).T)
+    pcd2.colors = o3d.utility.Vector3dVector(np.array(img1)[..., :3].reshape(-1, 3) / 255)
+
+    pcd += pcd2
+
+    o3d.visualization.draw_geometries([pcd])
+
