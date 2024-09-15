@@ -39,7 +39,7 @@ class TestEncoders(unittest.TestCase):
         #     "e-radio_v2",
         # ]
         self.encoders = [
-            "dinov2_giant",
+            "dinov2_base",
         ]
 
         self.encoder_configs = [{}] * len(self.encoders)
