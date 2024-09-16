@@ -105,7 +105,6 @@ class FlowAdaptor(UniCeptionAdaptorBase):
             raise ValueError(f"Invalid scaling strategy: {self.scale_strategy}")
 
 
-# adapted from dust3r
 class DepthAdaptor(UniCeptionAdaptorBase):
     def __init__(self, name: str, mode: str, vmin: float = -np.inf, vmax: float = np.inf, *args, **kwargs):
         """
@@ -158,7 +157,7 @@ class PointMapAdaptor(UniCeptionAdaptorBase):
         """
         Adaptor for the Depth head in UniCeption.
         """
-        super().__init__(name, required_channels=1, *args, **kwargs)
+        super().__init__(name, required_channels=3, *args, **kwargs)
 
         self.mode = mode
         self.vmin = vmin
@@ -256,6 +255,27 @@ class ConfidenceAdaptor(UniCeptionAdaptorBase):
             return RegressionAdaptorOutput(value=confidence)
 
 
+class MaskAdaptor(UniCeptionAdaptorBase):
+    def __init__(
+        self,
+        name: str,
+        *args,
+        **kwargs,
+    ):
+        """
+        Adaptor for the Mask head in UniCeption.
+        """
+        super().__init__(name, required_channels=1, *args, **kwargs)
+
+    def forward(self, adaptor_input: AdaptorInput):
+
+        x = adaptor_input.adaptor_feature
+
+        mask = torch.sigmoid(x)
+
+        return MaskAdaptorOutput(logits=x, mask=mask)
+
+
 class ValueWithConfidenceAdaptor(UniCeptionAdaptorBase):
     def __init__(
         self,
@@ -285,19 +305,15 @@ class ValueWithConfidenceAdaptor(UniCeptionAdaptorBase):
         self.confidence_adaptor = confidence_adaptor
 
     def forward(self, adaptor_input: AdaptorInput):
-
         value_input, confidence_input = torch.split(
             adaptor_input.adaptor_feature,
             [self.value_adaptor.required_channels, self.confidence_adaptor.required_channels],
             dim=1,
         )
-
-        value_adaptor_input = adaptor_input
-        value_adaptor_input.adaptor_feature = value_input
-
-        confidence_adaptor_input = adaptor_input
-        confidence_adaptor_input.adaptor_feature = confidence_input
-
+        value_adaptor_input = AdaptorInput(adaptor_feature=value_input, output_shape_hw=adaptor_input.output_shape_hw)
+        confidence_adaptor_input = AdaptorInput(
+            adaptor_feature=confidence_input, output_shape_hw=adaptor_input.output_shape_hw
+        )
         value_output = self.value_adaptor(value_adaptor_input)
         confidence_output = self.confidence_adaptor(confidence_adaptor_input)
 
@@ -323,35 +339,39 @@ class FlowWithConfidenceAdaptor(ValueWithConfidenceAdaptor):
         """
         Adaptor for the Flow with Confidence head in UniCeption.
         """
-        self.flow_adaptor = FlowAdaptor(
+        flow_adaptor = FlowAdaptor(
             name=f"{name}", flow_mean=flow_mean, flow_std=flow_std, base_shape=base_shape, scale_strategy=scale_strategy
         )
 
-        self.confidence_adaptor = ConfidenceAdaptor(
+        confidence_adaptor = ConfidenceAdaptor(
             name=f"{name}_confidence", confidence_type=confidence_type, vmin=vmin, vmax=vmax
         )
 
-        super().__init__(
-            name, value_adaptor=self.flow_adaptor, confidence_adaptor=self.confidence_adaptor, *args, **kwargs
-        )
+        super().__init__(name, value_adaptor=flow_adaptor, confidence_adaptor=confidence_adaptor, *args, **kwargs)
 
 
-class MaskAdaptor(UniCeptionAdaptorBase):
+class PointMapWithConfidenceAdaptor(ValueWithConfidenceAdaptor):
     def __init__(
         self,
         name: str,
+        # pointmap adaptor
+        pointmap_mode: str,
+        pointmap_vmin: float,
+        pointmap_vmax: float,
+        # confidence adaptor
+        confidence_type: str,
+        confidence_vmin: float,
+        confidence_vmax: float,
         *args,
         **kwargs,
     ):
         """
-        Adaptor for the Mask head in UniCeption.
+        Adaptor for the PointMap with Confidence head in UniCeption.
         """
-        super().__init__(name, required_channels=1, *args, **kwargs)
+        pointmap_adaptor = PointMapAdaptor(name=f"{name}", mode=pointmap_mode, vmin=pointmap_vmin, vmax=pointmap_vmax)
 
-    def forward(self, adaptor_input: AdaptorInput):
+        confidence_adaptor = ConfidenceAdaptor(
+            name=f"{name}_confidence", confidence_type=confidence_type, vmin=confidence_vmin, vmax=confidence_vmax
+        )
 
-        x = adaptor_input.adaptor_feature
-
-        mask = torch.sigmoid(x)
-
-        return MaskAdaptorOutput(logits=x, mask=mask)
+        super().__init__(name, value_adaptor=pointmap_adaptor, confidence_adaptor=confidence_adaptor, *args, **kwargs)

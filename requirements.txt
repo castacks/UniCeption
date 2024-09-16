@@ -6,3 +6,4 @@ matplotlib
 Pillow
 scikit-learn
 einops
+rerun-sdk

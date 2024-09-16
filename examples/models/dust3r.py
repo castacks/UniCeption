@@ -2,7 +2,14 @@
 Initalizing Pre-trained DUSt3R/MASt3R using UniCeption
 """
 
+import argparse
+import numpy as np
 import os
+import requests
+import rerun as rr
+from PIL import Image
+from io import BytesIO
+
 import torch
 import torch.nn as nn
 from typing import List, Tuple
@@ -11,73 +18,23 @@ from uniception.models.encoders import ViTEncoderInput
 from uniception.models.encoders.croco import CroCoEncoder
 from uniception.models.encoders.image_normalizations import IMAGE_NORMALIZATION_DICT
 from uniception.models.libs.croco.pos_embed import get_2d_sincos_pos_embed, RoPE2D
+
 from uniception.models.info_sharing.cross_attention_transformer import (
+    MultiViewCrossAttentionTransformer,
     MultiViewCrossAttentionTransformerIFR,
     MultiViewCrossAttentionTransformerInput,
 )
+
+from uniception.models.prediction_heads.adaptors import PointMapWithConfidenceAdaptor
+from uniception.models.prediction_heads.base import AdaptorInput, PredictionHeadInput, PredictionHeadLayeredInput
 from uniception.models.prediction_heads.dpt import DPTFeature, DPTRegressionProcessor
-from uniception.models.prediction_heads.base import AdaptorInput, PredictionHeadLayeredInput
-from uniception.models.prediction_heads.adaptors import PointMapAdaptor, ConfidenceAdaptor
+from uniception.models.prediction_heads.linear import LinearFeature
 
-
-def transposed(dic):
-    return {k: v.swapaxes(1, 2) for k, v in dic.items()}
-
-
-def transpose_to_landscape(head, activate=True):
-    """Predict in the correct aspect-ratio,
-    then transpose the result in landscape
-    and stack everything back together.
-    """
-
-    def wrapper_no(decout, true_shape):
-        B = len(true_shape)
-        assert true_shape[0:1].allclose(true_shape), "true_shape must be all identical"
-        H, W = true_shape[0].cpu().tolist()
-        # res = head(decout, (H, W))
-        res = head(decout)
-        return res
-
-    def wrapper_yes(decout, true_shape):
-        B = len(true_shape)
-        # by definition, the batch is in landscape mode so W >= H
-        H, W = int(true_shape.min()), int(true_shape.max())
-
-        height, width = true_shape.T
-        is_landscape = width >= height
-        is_portrait = ~is_landscape
-
-        # true_shape = true_shape.cpu()
-        if is_landscape.all():
-            # return head(decout, (H, W))
-            return head(decout)
-        if is_portrait.all():
-            # return transposed(head(decout, (W, H)))
-            return transposed(head(decout))
-
-        # batch is a mix of both portraint & landscape
-        def selout(ar):
-            return [d[ar] for d in decout]
-
-        # l_result = head(selout(is_landscape), (H, W))
-        # p_result = transposed(head(selout(is_portrait), (W, H)))
-        l_result = head(selout(is_landscape))
-        p_result = transposed(head(selout(is_portrait)))
-
-        # allocate full result
-        result = {}
-        for k in l_result | p_result:
-            x = l_result[k].new(B, *l_result[k].shape[1:])
-            x[is_landscape] = l_result[k]
-            x[is_portrait] = p_result[k]
-            result[k] = x
-
-        return result
-
-    return wrapper_yes if activate else wrapper_no
+from uniception.utils.viz import script_add_rerun_args
 
 
 def is_symmetrized(gt1, gt2):
+    "Function to check if input pairs are symmetrized, i.e., (a, b) and (b, a) always exist in the input"
     x = gt1["instance"]
     y = gt2["instance"]
     if len(x) == len(y) and len(x) == 1:
@@ -89,6 +46,7 @@ def is_symmetrized(gt1, gt2):
 
 
 def interleave(tensor1, tensor2):
+    "Interleave two tensors along the first dimension (used to avoid redundant encoding for symmetrized pairs)"
     res1 = torch.stack((tensor1, tensor2), dim=1).flatten(0, 1)
     res2 = torch.stack((tensor2, tensor1), dim=1).flatten(0, 1)
     return res1, res2
@@ -109,7 +67,6 @@ class DUSt3R(nn.Module):
         depth_mode: Tuple[str, float, float] = ("exp", -float("inf"), float("inf")),
         conf_mode: Tuple[str, float, float] = ("exp", 1, float("inf")),
         pos_embed: str = "RoPE100",
-        landscape_only=True,
         pretrained_encoder_checkpoint_path: str = None,
         pretrained_decoder_checkpoint_path: str = None,
         pretrained_pred_head_checkpoint_paths: List[str] = None,
@@ -144,8 +101,22 @@ class DUSt3R(nn.Module):
         """
         super().__init__(*args, **kwargs)
 
-        # Initialize RoPE for the CroCo Encoder & Multi-View Cross Attention Transformer
+        # Initalize the attributes
+        self.name = name
+        self.data_norm_type = data_norm_type
+        self.img_size = img_size
+        self.patch_embed_cls = patch_embed_cls
+        self.pred_head_type = pred_head_type
+        self.pred_head_output_dim = pred_head_output_dim
+        self.depth_mode = depth_mode
+        self.conf_mode = conf_mode
         self.pos_embed = pos_embed
+        self.pretrained_encoder_checkpoint_path = pretrained_encoder_checkpoint_path
+        self.pretrained_decoder_checkpoint_path = pretrained_decoder_checkpoint_path
+        self.pretrained_pred_head_checkpoint_paths = pretrained_pred_head_checkpoint_paths
+        self.pretrained_pred_head_regressor_checkpoint_paths = pretrained_pred_head_regressor_checkpoint_paths
+
+        # Initialize RoPE for the CroCo Encoder & Two-View Cross Attention Transformer
         freq = float(pos_embed[len("RoPE") :])
         self.rope = RoPE2D(freq=freq)
 
@@ -159,20 +130,45 @@ class DUSt3R(nn.Module):
         )
 
         # Initialize Multi-View Cross Attention Transformer
-        self.decoder = MultiViewCrossAttentionTransformerIFR(
-            name="base_decoder",
-            input_embed_dim=self.encoder.enc_embed_dim,
-            num_views=2,
-            indices=[6, 9],
-            norm_intermediate=False,
-            custom_positional_encoding=self.rope,
-            pretrained_checkpoint_path=pretrained_decoder_checkpoint_path,
-        )
+        if self.pred_head_type == "linear":
+            # Returns only normalized last layer features
+            self.decoder = MultiViewCrossAttentionTransformer(
+                name="base_decoder",
+                input_embed_dim=self.encoder.enc_embed_dim,
+                num_views=2,
+                custom_positional_encoding=self.rope,
+                pretrained_checkpoint_path=pretrained_decoder_checkpoint_path,
+            )
+        elif self.pred_head_type == "dpt":
+            # Returns intermediate features and normalized last layer features
+            self.decoder = MultiViewCrossAttentionTransformerIFR(
+                name="base_decoder",
+                input_embed_dim=self.encoder.enc_embed_dim,
+                num_views=2,
+                indices=[6, 9],
+                norm_intermediate=False,
+                custom_positional_encoding=self.rope,
+                pretrained_checkpoint_path=pretrained_decoder_checkpoint_path,
+            )
+        else:
+            raise ValueError(f"Invalid prediction head type: {pred_head_type}. Must be 'linear' or 'dpt'.")
 
         # Initialize Prediction Heads
-        self.landscape_only = landscape_only
         if pred_head_type == "linear":
-            pass
+            # Initialize Prediction Head 1
+            self.head1 = LinearFeature(
+                input_feature_dim=self.encoder.enc_embed_dim,
+                output_dim=pred_head_output_dim,
+                patch_size=self.encoder.patch_size,
+                pretrained_checkpoint_path=pretrained_pred_head_checkpoint_paths[0],
+            )
+            # Initialize Prediction Head 2
+            self.head2 = LinearFeature(
+                input_feature_dim=self.encoder.enc_embed_dim,
+                output_dim=pred_head_output_dim,
+                patch_size=self.encoder.patch_size,
+                pretrained_checkpoint_path=pretrained_pred_head_checkpoint_paths[1],
+            )
         elif pred_head_type == "dpt":
             # Initialze Predction Head 1
             self.dpt_feature_head1 = DPTFeature(
@@ -180,202 +176,188 @@ class DUSt3R(nn.Module):
                 hooks=[0, 1, 2, 3],
                 input_feature_dims=[self.encoder.enc_embed_dim] + [self.decoder.dim] * 3,
                 feature_dim=pred_head_feature_dim,
-            )
-            print(
-                self.dpt_feature_head1.load_state_dict(
-                    torch.load(pretrained_pred_head_checkpoint_paths[0], weights_only=False)
-                )
+                pretrained_checkpoint_path=pretrained_pred_head_checkpoint_paths[0],
             )
             self.dpt_regressor_head1 = DPTRegressionProcessor(
                 input_feature_dim=pred_head_feature_dim,
                 output_dim=pred_head_output_dim,
+                pretrained_checkpoint_path=pretrained_pred_head_regressor_checkpoint_paths[0],
             )
-            print(
-                self.dpt_regressor_head1.load_state_dict(
-                    torch.load(pretrained_pred_head_regressor_checkpoint_paths[0], weights_only=False)
-                )
-            )
-            self.downstream_head1 = nn.Sequential(self.dpt_feature_head1, self.dpt_regressor_head1)
+            self.head1 = nn.Sequential(self.dpt_feature_head1, self.dpt_regressor_head1)
             # Initialize Prediction Head 2
             self.dpt_feature_head2 = DPTFeature(
                 patch_size=self.encoder.patch_size,
                 hooks=[0, 1, 2, 3],
                 input_feature_dims=[self.encoder.enc_embed_dim] + [self.decoder.dim] * 3,
                 feature_dim=pred_head_feature_dim,
-            )
-            print(
-                self.dpt_feature_head2.load_state_dict(
-                    torch.load(pretrained_pred_head_checkpoint_paths[1], weights_only=False)
-                )
+                pretrained_checkpoint_path=pretrained_pred_head_checkpoint_paths[1],
             )
             self.dpt_regressor_head2 = DPTRegressionProcessor(
                 input_feature_dim=pred_head_feature_dim,
                 output_dim=pred_head_output_dim,
+                pretrained_checkpoint_path=pretrained_pred_head_regressor_checkpoint_paths[1],
             )
-            print(
-                self.dpt_regressor_head2.load_state_dict(
-                    torch.load(pretrained_pred_head_regressor_checkpoint_paths[1], weights_only=False)
-                )
-            )
-            self.downstream_head2 = nn.Sequential(self.dpt_feature_head2, self.dpt_regressor_head2)
-            # Magic wrapper to handle landscape/portrait
-            self.head1 = transpose_to_landscape(self.downstream_head1, activate=landscape_only)
-            self.head2 = transpose_to_landscape(self.downstream_head2, activate=landscape_only)
+            self.head2 = nn.Sequential(self.dpt_feature_head2, self.dpt_regressor_head2)
 
-        # Initialize Adaptors
-        self.point_map_adaptor = PointMapAdaptor(
-            name="depth",
-            mode=depth_mode[0],
-            vmin=depth_mode[1],
-            vmax=depth_mode[2],
-        )
-        self.confidence_adaptor = ConfidenceAdaptor(
-            name="confidence",
+        # Initialize Final Output Adaptor
+        self.adaptor = PointMapWithConfidenceAdaptor(
+            name="pointmap",
+            pointmap_mode=depth_mode[0],
+            pointmap_vmin=depth_mode[1],
+            pointmap_vmax=depth_mode[2],
             confidence_type=conf_mode[0],
-            vmin=conf_mode[1],
-            vmax=conf_mode[2],
+            confidence_vmin=conf_mode[1],
+            confidence_vmax=conf_mode[2],
         )
 
-    def _encode_image_pairs(self, img1, img2, true_shape1, true_shape2, data_norm_type):
+    def _encode_image_pairs(self, img1, img2, data_norm_type):
+        "Encode two different batches of images (each batch can have different image shape)"
         if img1.shape[-2:] == img2.shape[-2:]:
             encoder_input = ViTEncoderInput(image=torch.cat((img1, img2), dim=0), data_norm_type=data_norm_type)
-            encoder_input.true_shape = torch.cat((true_shape1, true_shape2), dim=0)
             encoder_output = self.encoder(encoder_input)
             out, out2 = encoder_output.features.chunk(2, dim=0)
         else:
             encoder_input = ViTEncoderInput(image=img1, data_norm_type=data_norm_type)
-            encoder_input.true_shape = true_shape1
             out = self.encoder(encoder_input)
             out = out.features
             encoder_input2 = ViTEncoderInput(image=img2)
-            encoder_input2.true_shape = true_shape2
             out2 = self.encoder(encoder_input2)
             out2 = out2.features
+
         return out, out2
 
     def _encode_symmetrized(self, view1, view2):
+        "Encode image pairs accounting for symmetrization, i.e., (a, b) and (b, a) always exist in the input"
         img1 = view1["img"]
         img2 = view2["img"]
-        B = img1.shape[0]
-        # Recover true_shape when available, otherwise assume that the img shape is the true one
-        shape1 = view1.get("true_shape", torch.tensor(img1.shape[-2:])[None].repeat(B, 1))
-        shape2 = view2.get("true_shape", torch.tensor(img2.shape[-2:])[None].repeat(B, 1))
-        # Warning! maybe the images have different portrait/landscape orientations
-
         if is_symmetrized(view1, view2):
-            # Computing half of forward pass!'
-            feat1, feat2 = self._encode_image_pairs(
-                img1[::2], img2[::2], shape1[::2], shape2[::2], data_norm_type=view1["data_norm_type"]
-            )
+            # Computing half of forward pass'
+            feat1, feat2 = self._encode_image_pairs(img1[::2], img2[::2], data_norm_type=view1["data_norm_type"])
             feat1, feat2 = interleave(feat1, feat2)
         else:
-            feat1, feat2 = self._encode_image_pairs(img1, img2, shape1, shape2, data_norm_type=view1["data_norm_type"])
+            feat1, feat2 = self._encode_image_pairs(img1, img2, data_norm_type=view1["data_norm_type"])
 
-        return (shape1, shape2), (feat1, feat2)
+        return feat1, feat2
 
     def _downstream_head(self, head_num, decout, img_shape):
+        "Run the respective prediction heads"
         head = getattr(self, f"head{head_num}")
-        head_input = PredictionHeadLayeredInput(
-            list_features=decout[f"{head_num}"], target_output_shape=img_shape[0].cpu().int().tolist()
-        )
-        return head(head_input, img_shape)
+        if self.pred_head_type == "linear":
+            head_input = PredictionHeadInput(last_feature=decout[f"{head_num}"])
+        elif self.pred_head_type == "dpt":
+            head_input = PredictionHeadLayeredInput(list_features=decout[f"{head_num}"], target_output_shape=img_shape)
+
+        return head(head_input)
 
     def forward(self, view1, view2):
-        # Encode the two images --> B,S,D
-        (shape1, shape2), (feat1, feat2) = self._encode_symmetrized(view1, view2)
+        """
+        Forward pass for DUSt3R performing the following operations:
+        1. Encodes the two input views (images).
+        2. Combines the encoded features using a two-view cross-attention transformer.
+        3. Passes the combined features through the respective prediction heads.
+        4. Returns the processed final outputs for both views.
 
-        # Combine all ref images into view-centric representation
+        Args:
+            view1 (dict): Dictionary containing the first view's images and instance information.
+                          "img" is a required key and value is a tensor of shape (B, C, H, W).
+            view2 (dict): Dictionary containing the second view's images and instance information.
+                          "img" is a required key and value is a tensor of shape (B, C, H, W).
+
+        Returns:
+            Tuple[dict, dict]: A tuple containing the final outputs for both views.
+        """
+        # Get input shapes
+        _, _, height1, width1 = view1["img"].shape
+        _, _, height2, width2 = view2["img"].shape
+        shape1 = (int(height1), int(width1))
+        shape2 = (int(height2), int(width2))
+
+        # Encode the two images --> Each feat output: BCHW features (batch_size, feature_dim, feature_height, feature_width)
+        feat1, feat2 = self._encode_symmetrized(view1, view2)
+
+        # Combine all images into view-centric representation
         decoder_input = MultiViewCrossAttentionTransformerInput(features=[feat1, feat2])
-        final_decoder_multi_view_feat, intermediate_decoder_multi_view_feat = self.decoder(decoder_input)
+        if self.pred_head_type == "linear":
+            final_decoder_multi_view_feat = self.decoder(decoder_input)
+        elif self.pred_head_type == "dpt":
+            final_decoder_multi_view_feat, intermediate_decoder_multi_view_feat = self.decoder(decoder_input)
 
-        # Define DPT feature list
-        decoder_outputs = {
-            "1": [
-                feat1,
-                intermediate_decoder_multi_view_feat[0].features[0],
-                intermediate_decoder_multi_view_feat[1].features[0],
-                final_decoder_multi_view_feat.features[0],
-            ],
-            "2": [
-                feat2,
-                intermediate_decoder_multi_view_feat[0].features[1],
-                intermediate_decoder_multi_view_feat[1].features[1],
-                final_decoder_multi_view_feat.features[1],
-            ],
-        }
+        if self.pred_head_type == "linear":
+            # Define feature dictionary for linear head
+            decoder_outputs = {
+                "1": final_decoder_multi_view_feat.features[0].float(),
+                "2": final_decoder_multi_view_feat.features[1].float(),
+            }
+        elif self.pred_head_type == "dpt":
+            # Define feature dictionary for DPT head
+            decoder_outputs = {
+                "1": [
+                    feat1.float(),
+                    intermediate_decoder_multi_view_feat[0].features[0].float(),
+                    intermediate_decoder_multi_view_feat[1].features[0].float(),
+                    final_decoder_multi_view_feat.features[0].float(),
+                ],
+                "2": [
+                    feat2.float(),
+                    intermediate_decoder_multi_view_feat[0].features[1].float(),
+                    intermediate_decoder_multi_view_feat[1].features[1].float(),
+                    final_decoder_multi_view_feat.features[1].float(),
+                ],
+            }
 
-        # Downstream prediction head
+        # Downstream task prediction
         with torch.autocast("cuda", enabled=False):
-            res1 = self._downstream_head(1, decoder_outputs, shape1)
-            res2 = self._downstream_head(2, decoder_outputs, shape2)
+            # Prediction heads
+            head_output1 = self._downstream_head(1, decoder_outputs, shape1)
+            head_output2 = self._downstream_head(2, decoder_outputs, shape2)
 
-        # Get all the features and slice for processing
-        res1_all_features = res1.decoded_channels
-        res2_all_features = res2.decoded_channels
-        res1_pointmap_features, res1_confidence_features = torch.split(res1_all_features, [3, 1], dim=1)
-        res2_pointmap_features, res2_confidence_features = torch.split(res2_all_features, [3, 1], dim=1)
+            # Post-process outputs
+            final_output1 = self.adaptor(
+                AdaptorInput(adaptor_feature=head_output1.decoded_channels, output_shape_hw=shape1)
+            )
+            final_output2 = self.adaptor(
+                AdaptorInput(adaptor_feature=head_output2.decoded_channels, output_shape_hw=shape2)
+            )
 
-        # Run adaptors
-        output1 = {}
-        output2 = {}
-        output1["pts3d"] = self.point_map_adaptor(AdaptorInput(res1_pointmap_features, shape1[0]))
-        output1["conf"] = self.confidence_adaptor(AdaptorInput(res1_confidence_features, shape1[0]))
-        output2["pts3d"] = self.point_map_adaptor(AdaptorInput(res2_pointmap_features, shape2[0]))
-        output2["conf"] = self.confidence_adaptor(AdaptorInput(res2_confidence_features, shape2[0]))
-        return output1, output2
+            # Convert outputs to dictionary
+            res1 = {
+                "pts3d": final_output1.value.permute(0, 2, 3, 1).contiguous(),
+                "conf": final_output1.confidence.permute(0, 2, 3, 1).contiguous(),
+            }
+            res2 = {
+                "pts3d_in_other_view": final_output2.value.permute(0, 2, 3, 1).contiguous(),
+                "conf": final_output2.confidence.permute(0, 2, 3, 1).contiguous(),
+            }
+
+        return res1, res2
 
 
-def log_data_to_rerun(image, depthmap, pose, intrinsics, pts3d, mask, base_name, pts_name):
-    # Log camera info and loaded data
-    height, width = image.shape[0], image.shape[1]
-    rr.log(
-        base_name,
-        rr.Transform3D(
-            translation=pose[:3, 3],
-            mat3x3=pose[:3, :3],
-            from_parent=False,
-        ),
-    )
-    rr.log(
-        f"{base_name}/pinhole",
-        rr.Pinhole(
-            image_from_camera=intrinsics,
-            height=height,
-            width=width,
-            camera_xyz=rr.ViewCoordinates.RDF,
-        ),
-    )
-    rr.log(
-        f"{base_name}/pinhole/rgb",
-        rr.Image(image),
-    )
-    rr.log(
-        f"{base_name}/pinhole/depth",
-        rr.DepthImage(depthmap),
-    )
-    # Log points in 3D
-    filtered_pts = pts3d[mask]
-    filtered_pts_col = image[mask]
-    rr.log(
-        pts_name,
-        rr.Points3D(
-            positions=filtered_pts.reshape(-1, 3),
-            colors=filtered_pts_col.reshape(-1, 3),
-        ),
-    )
+def get_parser():
+    "Argument parser for the script."
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--viz", action="store_true")
+
+    return parser
 
 
 if __name__ == "__main__":
+    # Parse arguments
+    parser = get_parser()
+    script_add_rerun_args(parser)  # Options: --addr
+    args = parser.parse_args()
+
+    # Get paths to pretrained checkpoints
     current_file_path = os.path.abspath(__file__)
     relative_checkpoint_path = os.path.join(os.path.dirname(current_file_path), "../../checkpoints")
     pretrained_pred_head_checkpoint_paths = [
-        f"{relative_checkpoint_path}/prediction_heads/dpt_feature/dust3r_512_dpt_head1_dpt.pth",
-        f"{relative_checkpoint_path}/prediction_heads/dpt_feature/dust3r_512_dpt_head2_dpt.pth",
+        f"{relative_checkpoint_path}/prediction_heads/dpt_feature_head/DUSt3R_512_dpt_feature_head1.pth",
+        f"{relative_checkpoint_path}/prediction_heads/dpt_feature_head/DUSt3R_512_dpt_feature_head2.pth",
     ]
     pretrained_pred_head_regressor_checkpoint_paths = [
-        f"{relative_checkpoint_path}/prediction_heads/dpt_reg_processor/dust3r_512_dpt_head1_reg_processor.pth",
-        f"{relative_checkpoint_path}/prediction_heads/dpt_reg_processor/dust3r_512_dpt_head2_reg_processor.pth",
+        f"{relative_checkpoint_path}/prediction_heads/dpt_reg_processor/DUSt3R_512_dpt_reg_processor1.pth",
+        f"{relative_checkpoint_path}/prediction_heads/dpt_reg_processor/DUSt3R_512_dpt_reg_processor2.pth",
     ]
+
     # Initialize DUSt3R 512 DPT model using UniCeption modules
     dust3r_model = DUSt3R(
         name="dust3r_512_dpt",
@@ -390,57 +372,57 @@ if __name__ == "__main__":
     print("DUSt3R model initialized successfully!")
     dust3r_model.cuda()
 
-    import numpy as np
-    import torch
-
-    import requests
-    from PIL import Image
-    from io import BytesIO
-
-    # Dual Image Encoder
+    # Initalize two example images
     img0_url = (
         "https://raw.githubusercontent.com/naver/croco/d3d0ab2858d44bcad54e5bfc24f565983fbe18d9/assets/Chateau1.png"
     )
     img1_url = (
         "https://raw.githubusercontent.com/naver/croco/d3d0ab2858d44bcad54e5bfc24f565983fbe18d9/assets/Chateau2.png"
     )
-
     response = requests.get(img0_url)
     img0 = Image.open(BytesIO(response.content))
-
     response = requests.get(img1_url)
     img1 = Image.open(BytesIO(response.content))
-
     img0_tensor = torch.from_numpy(np.array(img0))[..., :3].permute(2, 0, 1).unsqueeze(0).float() / 255
     img1_tensor = torch.from_numpy(np.array(img1))[..., :3].permute(2, 0, 1).unsqueeze(0).float() / 255
 
-    # normalize according to dust3r norm
+    # Normalize images according to DUSt3R's normalization
     img0_tensor = (img0_tensor - 0.5) / 0.5
     img1_tensor = (img1_tensor - 0.5) / 0.5
     img_tensor = torch.cat((img0_tensor, img1_tensor), dim=0).cuda()
 
-    # Run a dummy forward pass
+    # Run a forward pass
     view1 = {"img": img_tensor, "instance": [0, 1], "data_norm_type": "dust3r"}
     view2 = {"img": view1["img"][[1, 0]].clone().cuda(), "instance": [1, 0], "data_norm_type": "dust3r"}
 
     res1, res2 = dust3r_model(view1, view2)
     print("Forward pass completed successfully!")
 
-    points1 = res1["pts3d"].value[0].detach().cpu().numpy()
-    points2 = res2["pts3d"].value[0].detach().cpu().numpy()
+    points1 = res1["pts3d"][0].detach().cpu().numpy()
+    points2 = res2["pts3d_in_other_view"][0].detach().cpu().numpy()
+    conf_mask1 = res1["conf"][0].squeeze(-1).detach().cpu().numpy() > 3.0
+    conf_mask2 = res2["conf"][0].squeeze(-1).detach().cpu().numpy() > 3.0
 
-    # visualize the poitns in open3d
-    import open3d as o3d
-
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(points1.reshape(3, -1).T)
-    pcd.colors = o3d.utility.Vector3dVector(np.array(img0)[..., :3].reshape(-1, 3) / 255)
-
-    pcd2 = o3d.geometry.PointCloud()
-    pcd2.points = o3d.utility.Vector3dVector(points2.reshape(3, -1).T)
-    pcd2.colors = o3d.utility.Vector3dVector(np.array(img1)[..., :3].reshape(-1, 3) / 255)
-
-    pcd += pcd2
-
-    o3d.visualization.draw_geometries([pcd])
-
+    if args.viz:
+        rr.script_setup(args, f"DUSt3R_Inference")
+        rr.set_time_seconds("stable_time", 0)
+        rr.log("dust3r", rr.ViewCoordinates.RDF, static=True)
+        filtered_pts3d1 = points1[conf_mask1]
+        filtered_pts3d1_colors = np.array(img0)[..., :3][conf_mask1] / 255
+        filtered_pts3d2 = points2[conf_mask2]
+        filtered_pts3d2_colors = np.array(img1)[..., :3][conf_mask2] / 255
+        rr.log(
+            "dust3r/view1",
+            rr.Points3D(
+                positions=filtered_pts3d1.reshape(-1, 3),
+                colors=filtered_pts3d1_colors.reshape(-1, 3),
+            ),
+        )
+        rr.log(
+            "dust3r/view2",
+            rr.Points3D(
+                positions=filtered_pts3d2.reshape(-1, 3),
+                colors=filtered_pts3d2_colors.reshape(-1, 3),
+            ),
+        )
+        print("Visualizations logged to Rerun: http://localhost:2006?url=ws://localhost:2005")

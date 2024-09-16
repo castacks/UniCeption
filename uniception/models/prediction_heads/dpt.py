@@ -47,9 +47,11 @@ class DPTFeature(nn.Module):
         feature_dim: int = 256,
         use_bn: bool = False,
         output_width_ratio=1,
+        pretrained_checkpoint_path: str = None,
+        *args,
         **kwargs,
     ):
-        super().__init__()
+        super().__init__(*args, **kwargs)
         self.patch_size = pair(patch_size)
         self.main_tasks = main_tasks
         self.hooks = hooks
@@ -72,6 +74,12 @@ class DPTFeature(nn.Module):
 
         if self.input_feature_dims is not None:
             self.init(input_feature_dims=input_feature_dims)
+
+        self.pretrained_checkpoint_path = pretrained_checkpoint_path
+        if self.pretrained_checkpoint_path is not None:
+            print(f"Loading pretrained DPT dense feature head from {self.pretrained_checkpoint_path}")
+            ckpt = torch.load(self.pretrained_checkpoint_path, weights_only=False)
+            print(self.load_state_dict(ckpt["model"]))
 
     def init(self, input_feature_dims: Union[int, List[int]] = 768):
         """
@@ -207,6 +215,9 @@ class DPTRegressionProcessor(nn.Module):
         input_feature_dim: int,
         output_dim: int,
         hidden_dims: Optional[List[int]] = None,  # when not given, use input_feature_dim//2
+        pretrained_checkpoint_path: str = None,
+        *args,
+        **kwargs,
     ):
         """
         DPT regression processor, takes 8x upsampled feature from DPT and furture upsamples to target shape
@@ -217,9 +228,10 @@ class DPTRegressionProcessor(nn.Module):
             input_feature_dim: Dimension of input feature
             output_dim: Dimension of output regression
             hidden_dims: [h1, h2] List of 2 hidden dimensions for intermediate. default is [input_feature_dim//2] * 2
+            pretrained_checkpoint_path: Path to pretrained checkpoint (default: None)
         """
 
-        super().__init__()
+        super().__init__(*args, **kwargs)
 
         if hidden_dims is None:
             hidden_dims = [input_feature_dim // 2] * 2
@@ -233,6 +245,12 @@ class DPTRegressionProcessor(nn.Module):
             nn.ReLU(True),
             nn.Conv2d(hidden_dims[1], output_dim, kernel_size=1, stride=1, padding=0),
         )
+
+        self.pretrained_checkpoint_path = pretrained_checkpoint_path
+        if self.pretrained_checkpoint_path is not None:
+            print(f"Loading pretrained DPT regression processor from {self.pretrained_checkpoint_path}")
+            ckpt = torch.load(self.pretrained_checkpoint_path, weights_only=False)
+            print(self.load_state_dict(ckpt["model"]))
 
     def forward(self, dpt_processor_input: DPTFeatureInput):
         """
@@ -265,6 +283,9 @@ class DPTSegmentationProcessor(nn.Module):
         output_dim: int,
         hidden_dim: Optional[int] = None,  # when not given, use input_feature_dim
         use_bn: bool = False,
+        pretrained_checkpoint_path: str = None,
+        *args,
+        **kwargs,
     ):
         """
         DPT segmentation processor, takes 8x upsampled feature from DPT and furture upsamples to target shape.
@@ -277,9 +298,10 @@ class DPTSegmentationProcessor(nn.Module):
             output_dim: Dimension of output regression
             hidden_dim: h1 Hidden dimension for intermediate. default is input_feature_dim
             use_bn: Whether to use batch normalization, default is False
+            pretrained_checkpoint_path: Path to pretrained checkpoint (default: None)
         """
 
-        super().__init__()
+        super().__init__(*args, **kwargs)
 
         if hidden_dim is None:
             hidden_dim = input_feature_dim
@@ -291,6 +313,12 @@ class DPTSegmentationProcessor(nn.Module):
             nn.Dropout(0.1, False),
             nn.Conv2d(hidden_dim, output_dim, kernel_size=1),
         )
+
+        self.pretrained_checkpoint_path = pretrained_checkpoint_path
+        if self.pretrained_checkpoint_path is not None:
+            print(f"Loading pretrained DPT segmentation processor from {self.pretrained_checkpoint_path}")
+            ckpt = torch.load(self.pretrained_checkpoint_path, weights_only=False)
+            print(self.load_state_dict(ckpt["model"]))
 
     def forward(self, dpt_processor_input: DPTFeatureInput):
         """
@@ -317,7 +345,6 @@ class DPTSegmentationProcessor(nn.Module):
 
 
 if __name__ == "__main__":
-
     dpt_feature_output = DPTFeature(
         patch_size=16,
         main_tasks=("rgb",),
@@ -348,5 +375,3 @@ if __name__ == "__main__":
     dpt_processor_input = DPTFeatureInput(
         features_upsampled_8x=output.features_upsampled_8x, target_output_shape=image_shape
     )
-
-    output = postprocess(dpt_processor_input)
