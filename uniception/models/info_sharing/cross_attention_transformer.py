@@ -5,13 +5,14 @@ UniCeption Cross-Attention Transformer for Information Sharing
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import partial
-from jaxtyping import Float
 from typing import Callable, List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
+from jaxtyping import Float
 from torch import Tensor
-from uniception.models.info_sharing.base import UniCeptionInfoSharingBase, InfoSharingInput, InfoSharingOutput
+
+from uniception.models.info_sharing.base import InfoSharingInput, InfoSharingOutput, UniCeptionInfoSharingBase
 from uniception.models.utils.intermediate_feature_return import IntermediateFeatureReturner, feature_take_indices
 from uniception.models.utils.transformer_blocks import CrossAttentionBlock, Mlp
 

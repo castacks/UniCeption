@@ -3,33 +3,30 @@ Initalizing Pre-trained DUSt3R using UniCeption
 """
 
 import argparse
-import numpy as np
 import os
+from io import BytesIO
+from typing import List, Tuple
+
+import numpy as np
 import requests
 import rerun as rr
-from PIL import Image
-from io import BytesIO
-
 import torch
 import torch.nn as nn
-from typing import List, Tuple
+from PIL import Image
 
 from uniception.models.encoders import ViTEncoderInput
 from uniception.models.encoders.croco import CroCoEncoder
 from uniception.models.encoders.image_normalizations import IMAGE_NORMALIZATION_DICT
-from uniception.models.libs.croco.pos_embed import get_2d_sincos_pos_embed, RoPE2D
-
 from uniception.models.info_sharing.cross_attention_transformer import (
     MultiViewCrossAttentionTransformer,
     MultiViewCrossAttentionTransformerIFR,
     MultiViewCrossAttentionTransformerInput,
 )
-
+from uniception.models.libs.croco.pos_embed import RoPE2D, get_2d_sincos_pos_embed
 from uniception.models.prediction_heads.adaptors import PointMapWithConfidenceAdaptor
 from uniception.models.prediction_heads.base import AdaptorInput, PredictionHeadInput, PredictionHeadLayeredInput
 from uniception.models.prediction_heads.dpt import DPTFeature, DPTRegressionProcessor
 from uniception.models.prediction_heads.linear import LinearFeature
-
 from uniception.utils.viz import script_add_rerun_args
 
 

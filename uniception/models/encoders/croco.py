@@ -2,15 +2,16 @@
 Encoder Class for CroCo & DUSt3R
 """
 
+from functools import partial
+from typing import Callable, List, Optional, Tuple, Union
+
 import torch
 import torch.nn as nn
-from functools import partial
-from typing import Callable, List, Optional, Union, Tuple
 
 from uniception.models.encoders.base import UniCeptionViTEncoderBase, ViTEncoderInput, ViTEncoderOutput
 from uniception.models.libs.croco.blocks import Block
 from uniception.models.libs.croco.patch_embed import get_patch_embed
-from uniception.models.libs.croco.pos_embed import get_2d_sincos_pos_embed, RoPE2D
+from uniception.models.libs.croco.pos_embed import RoPE2D, get_2d_sincos_pos_embed
 from uniception.models.utils.intermediate_feature_return import IntermediateFeatureReturner, feature_take_indices
 
 

@@ -4,8 +4,9 @@ References:
 HuggingFace PyTorch Image Models (Timm)
 """
 
-import torch
 from typing import List, Optional, Tuple, Union
+
+import torch
 
 try:
     from torch import _assert

@@ -2,12 +2,13 @@
 Base Prediction Head Class for UniCeption
 """
 
+from dataclasses import dataclass
+from typing import Dict, List, Tuple
+
 import torch
 import torch.nn as nn
-from dataclasses import dataclass
 from jaxtyping import Float
 from torch import Tensor
-from typing import List, Dict, Tuple
 
 
 @dataclass

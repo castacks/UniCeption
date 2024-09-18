@@ -18,8 +18,8 @@ from uniception.models.utils.config import use_fused_attn
 
 use_torch_attn = use_fused_attn()
 
-from itertools import repeat
 import collections.abc
+from itertools import repeat
 
 
 def _ntuple(n):

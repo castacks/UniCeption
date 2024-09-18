@@ -3,18 +3,17 @@ Encoder Factory for UniCeption
 """
 
 import os
+
 from uniception.models.encoders.base import (
+    EncoderInput,
     UniCeptionEncoderBase,
     UniCeptionViTEncoderBase,
-    EncoderInput,
     ViTEncoderInput,
     ViTEncoderOutput,
 )
-
 from uniception.models.encoders.croco import CroCoEncoder
 from uniception.models.encoders.dinov2 import DINOv2Encoder
 from uniception.models.encoders.radio import RADIOEncoder
-
 
 # Define encoder configurations
 ENCODER_CONFIGS = {
@@ -42,12 +41,14 @@ def encoder_factory(encoder_str: str, **kwargs) -> UniCeptionEncoderBase:
     Args:
         encoder_str (str): Name of the encoder to create.
         **kwargs: Additional keyword arguments to pass to the encoder constructor.
-    
+
     Returns:
         UniCeptionEncoderBase: An instance of the specified encoder.
     """
     if encoder_str not in ENCODER_CONFIGS:
-        raise ValueError(f"Unknown encoder: {encoder_str}. For valid encoder_str options, please use python3 -m uniception.models.encoders.list")
+        raise ValueError(
+            f"Unknown encoder: {encoder_str}. For valid encoder_str options, please use python3 -m uniception.models.encoders.list"
+        )
 
     encoder_config = ENCODER_CONFIGS[encoder_str]
     encoder_class = encoder_config["class"]

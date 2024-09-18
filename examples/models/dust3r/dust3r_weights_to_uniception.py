@@ -1,20 +1,18 @@
 """
 This file extracts the cross-attention transformer & prediction head weights from dust3r checkpoints into uniception format.
 
-Special Notice: dust3r have changed their released weights before/after CVPR, and 
+Special Notice: dust3r have changed their released weights before/after CVPR, and
 uniception uses the checkpoint BEFORE CVPR (they perform better). So please make sure you are not converting
 the newly downloaded weights. Consult Yuchen and Nikhil on where to find the old weights.
 """
 
-import os
 import argparse
+import os
+
 import torch
 from torch import nn
 
-from uniception.models.info_sharing.cross_attention_transformer import (
-    MultiViewCrossAttentionTransformerIFR,
-)
-
+from uniception.models.info_sharing.cross_attention_transformer import MultiViewCrossAttentionTransformerIFR
 from uniception.models.prediction_heads.dpt import DPTFeature, DPTRegressionProcessor
 from uniception.models.prediction_heads.linear import LinearFeature
 
@@ -74,7 +72,6 @@ def extract_dust3r_dpt_checkpoints(checkpoint_path, output_folder, output_filena
     source_ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
 
     for head in ["head1", "head2"]:
-
         # Extract head weights from the checkpoint
         dpt_head_weights = {k: v for k, v in source_ckpt["model"].items() if k.startswith(f"downstream_{head}")}
         dpt_head_weights = {k.replace(f"downstream_{head}.dpt.", ""): v for k, v in dpt_head_weights.items()}
@@ -132,7 +129,6 @@ def extract_dust3r_linear_checkpoints(checkpoint_path, output_folder, output_fil
     source_ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
 
     for head in ["head1", "head2"]:
-
         linear_head_params = {k: v for k, v in source_ckpt["model"].items() if k.startswith(f"downstream_{head}")}
         linear_head_params = {k.replace(f"downstream_{head}.proj.", ""): v for k, v in linear_head_params.items()}
 
@@ -162,7 +158,6 @@ def extract_mast3r_dpt_checkpoints(checkpoint_path, output_folder, output_filena
     source_ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
 
     for head in ["head1", "head2"]:
-
         dpt_head = {k: v for k, v in source_ckpt["model"].items() if k.startswith(f"downstream_{head}")}
         dpt_head = {k.replace(f"downstream_{head}.", ""): v for k, v in dpt_head.items()}
         dpt_head = {k.replace("dpt.", ""): v for k, v in dpt_head.items()}
@@ -278,7 +273,6 @@ def test_linear_to_conv():
 
 
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser(description="Extract dust3r checkpoints to uniception format")
 
     parser.add_argument(

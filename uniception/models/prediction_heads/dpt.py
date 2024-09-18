@@ -5,16 +5,17 @@ The DPT head implementation is based on DUSt3R and CroCoV2
 References: https://github.com/naver/dust3r
 """
 
+from dataclasses import dataclass
+from typing import Iterable, List, Optional, Tuple, Union
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from dataclasses import dataclass
 from jaxtyping import Float
 from torch import Tensor
-from typing import Iterable, List, Optional, Tuple, Union
 
 from uniception.models.libs.croco.dpt_block import make_fusion_block, make_scratch, pair
-from uniception.models.prediction_heads.base import PredictionHeadLayeredInput, PixelTaskOutput
+from uniception.models.prediction_heads.base import PixelTaskOutput, PredictionHeadLayeredInput
 
 
 @dataclass

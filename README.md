@@ -18,6 +18,7 @@ source uniception/bin/activate
 pip install torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0
 pip install -U xformers==0.0.27.post2 --index-url https://download.pytorch.org/whl/cu121
 pip install -r requirements.txt
+pre-commit install # Github pre-commit hooks for linting
 cd uniception/models/libs/croco/curope # For CroCo
 python3 setup.py build_ext --inplace
 cd ../../../../../
@@ -44,4 +45,4 @@ Please follow these guidelines when contributing to UniCeption:
 - **Code Style**: Follow the [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html) for code style.
 - **Documentation**: Add docstrings to all classes and methods.
 - **Unit Tests**: Add necessary unit tests to the `tests` folder.
-- **Linting**: Run `black` on your code before committing. For example, you can run `black uniception`.
+- **Linting**: Run `black` & `isort` on your code before committing. For example, you can run `black . && isort .`.

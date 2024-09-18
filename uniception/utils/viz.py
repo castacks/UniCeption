@@ -2,8 +2,7 @@
 Utilitary functions for visualizations
 """
 
-from argparse import ArgumentParser
-from argparse import Namespace
+from argparse import ArgumentParser, Namespace
 from distutils.util import strtobool
 
 

@@ -7,3 +7,4 @@ Pillow
 scikit-learn
 einops
 rerun-sdk
+pre-commit

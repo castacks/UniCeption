@@ -2,20 +2,21 @@
 Adaptors for the UniCeption Prediction Heads.
 """
 
+from dataclasses import dataclass
 from math import isfinite
+from typing import Dict, List, Optional, Tuple
+
 import numpy as np
 import torch
 import torch.nn as nn
-from dataclasses import dataclass
-from typing import List, Optional, Dict, Tuple
 
 from uniception.models.prediction_heads import (
-    UniCeptionAdaptorBase,
     AdaptorInput,
     AdaptorOutput,
     MaskAdaptorOutput,
     RegressionAdaptorOutput,
     RegressionWithConfidenceAdaptorOutput,
+    UniCeptionAdaptorBase,
 )
 
 
@@ -268,7 +269,6 @@ class MaskAdaptor(UniCeptionAdaptorBase):
         super().__init__(name, required_channels=1, *args, **kwargs)
 
     def forward(self, adaptor_input: AdaptorInput):
-
         x = adaptor_input.adaptor_feature
 
         mask = torch.sigmoid(x)

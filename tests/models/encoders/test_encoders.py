@@ -12,12 +12,12 @@ import numpy as np
 import requests
 import torch
 from PIL import Image
+
 from uniception.models.encoders import *
 from uniception.models.encoders.image_normalizations import *
 
 
 class TestEncoders(unittest.TestCase):
-
     def __init__(self, *args, **kwargs):
         super(TestEncoders, self).__init__(*args, **kwargs)
 
