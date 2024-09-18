@@ -12,6 +12,7 @@ IntermediateFeatureReturner
 │   │   ├── ConfidenceAdaptor
 │   │   ├── ValueWithConfidenceAdaptor
 │   │   └── FlowWithConfidenceAdaptor
+│   │   └── PointMapWithConfidenceAdaptor
 │   └── DPTSegmentationProcessor
 │       └── MaskAdaptor
 └── LinearFeature

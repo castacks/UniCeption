@@ -1,5 +1,5 @@
 """
-Initalizing Pre-trained DUSt3R/MASt3R using UniCeption
+Initalizing Pre-trained DUSt3R using UniCeption
 """
 
 import argparse
@@ -67,10 +67,12 @@ class DUSt3R(nn.Module):
         depth_mode: Tuple[str, float, float] = ("exp", -float("inf"), float("inf")),
         conf_mode: Tuple[str, float, float] = ("exp", 1, float("inf")),
         pos_embed: str = "RoPE100",
+        pretrained_checkpoint_path: str = None,
         pretrained_encoder_checkpoint_path: str = None,
         pretrained_decoder_checkpoint_path: str = None,
-        pretrained_pred_head_checkpoint_paths: List[str] = None,
-        pretrained_pred_head_regressor_checkpoint_paths: List[str] = None,
+        pretrained_pred_head_checkpoint_paths: List[str] = [None, None],
+        pretrained_pred_head_regressor_checkpoint_paths: List[str] = [None, None],
+        override_encoder_checkpoint_attributes: bool = False,
         *args,
         **kwargs,
     ):
@@ -94,10 +96,12 @@ class DUSt3R(nn.Module):
             conf_mode (Tuple[str, float, float]): Confidence mode settings (mode=['linear', 'square', 'exp'], vmin, vmax). (default: ('exp', 1, inf))
             pos_embed (str): Position embedding type. (default: 'RoPE100')
             landscape_only (bool): Run downstream head only in landscape orientation. (default: True)
+            pretrained_checkpoint_path (str): Path to pretrained checkpoint. (default: None)
             pretrained_encoder_checkpoint_path (str): Path to pretrained encoder checkpoint. (default: None)
             pretrained_decoder_checkpoint_path (str): Path to pretrained decoder checkpoint. (default: None)
             pretrained_pred_head_checkpoint_paths (List[str]): Paths to pretrained prediction head checkpoints. (default: None)
             pretrained_pred_head_regressor_checkpoint_paths (List[str]): Paths to pretrained prediction head regressor checkpoints. (default: None)
+            override_encoder_checkpoint_attributes (bool): Whether to override encoder checkpoint attributes. (default: False)
         """
         super().__init__(*args, **kwargs)
 
@@ -111,10 +115,12 @@ class DUSt3R(nn.Module):
         self.depth_mode = depth_mode
         self.conf_mode = conf_mode
         self.pos_embed = pos_embed
+        self.pretrained_checkpoint_path = pretrained_checkpoint_path
         self.pretrained_encoder_checkpoint_path = pretrained_encoder_checkpoint_path
         self.pretrained_decoder_checkpoint_path = pretrained_decoder_checkpoint_path
         self.pretrained_pred_head_checkpoint_paths = pretrained_pred_head_checkpoint_paths
         self.pretrained_pred_head_regressor_checkpoint_paths = pretrained_pred_head_regressor_checkpoint_paths
+        self.override_encoder_checkpoint_attributes = override_encoder_checkpoint_attributes
 
         # Initialize RoPE for the CroCo Encoder & Two-View Cross Attention Transformer
         freq = float(pos_embed[len("RoPE") :])
@@ -127,6 +133,7 @@ class DUSt3R(nn.Module):
             patch_embed_cls=patch_embed_cls,
             img_size=img_size,
             pretrained_checkpoint_path=pretrained_encoder_checkpoint_path,
+            override_checkpoint_attributes=override_encoder_checkpoint_attributes,
         )
 
         # Initialize Multi-View Cross Attention Transformer
@@ -209,6 +216,12 @@ class DUSt3R(nn.Module):
             confidence_vmin=conf_mode[1],
             confidence_vmax=conf_mode[2],
         )
+
+        # Load pretrained weights
+        if self.pretrained_checkpoint_path is not None:
+            print(f"Loading pretrained DUSt3R weights from {self.pretrained_checkpoint_path} ...")
+            ckpt = torch.load(self.pretrained_checkpoint_path, weights_only=False)
+            print(self.load_state_dict(ckpt["model"]))
 
     def _encode_image_pairs(self, img1, img2, data_norm_type):
         "Encode two different batches of images (each batch can have different image shape)"
@@ -346,6 +359,11 @@ if __name__ == "__main__":
     script_add_rerun_args(parser)  # Options: --addr
     args = parser.parse_args()
 
+    # Set up Rerun for visualization
+    if args.viz:
+        rr.script_setup(args, f"UniCeption_DUSt3R_Inference")
+        rr.set_time_seconds("stable_time", 0)
+
     # the reference data are collected under this setting.
     # may use (False, "high") to test the relative error at TF32 precision
     torch.backends.cuda.matmul.allow_tf32 = False
@@ -354,69 +372,116 @@ if __name__ == "__main__":
     # Get paths to pretrained checkpoints
     current_file_path = os.path.abspath(__file__)
     relative_checkpoint_path = os.path.join(os.path.dirname(current_file_path), "../../../checkpoints")
-    
+
+    # Initialize model configurations
     MODEL_TO_CHECKPOINT_PATH = {
-        "dust3r_512_dpt" : {
-            "encoder" : f"{relative_checkpoint_path}/encoders/CroCo_Encoder_512_DUSt3R_dpt.pth",
-            "decoder" : f"{relative_checkpoint_path}/info_sharing/cross_attn_transformer/Two_View_Cross_Attention_Transformer_DUSt3R_512_dpt.pth",
-            "feature_head" : [
+        "dust3r_512_dpt": {
+            "encoder": f"{relative_checkpoint_path}/encoders/CroCo_Encoder_512_DUSt3R_dpt.pth",
+            "decoder": f"{relative_checkpoint_path}/info_sharing/cross_attn_transformer/Two_View_Cross_Attention_Transformer_DUSt3R_512_dpt.pth",
+            "feature_head": [
                 f"{relative_checkpoint_path}/prediction_heads/dpt_feature_head/DUSt3R_512_dpt_feature_head1.pth",
                 f"{relative_checkpoint_path}/prediction_heads/dpt_feature_head/DUSt3R_512_dpt_feature_head2.pth",
             ],
-            "regressor" : [
+            "regressor": [
                 f"{relative_checkpoint_path}/prediction_heads/dpt_reg_processor/DUSt3R_512_dpt_reg_processor1.pth",
                 f"{relative_checkpoint_path}/prediction_heads/dpt_reg_processor/DUSt3R_512_dpt_reg_processor2.pth",
-            ]
-        },
-        "dust3r_512_linear" : {
-            "encoder" : f"{relative_checkpoint_path}/encoders/CroCo_Encoder_512_DUSt3R_linear.pth",
-            "decoder" : f"{relative_checkpoint_path}/info_sharing/cross_attn_transformer/Two_View_Cross_Attention_Transformer_DUSt3R_512_linear.pth",
-            "feature_head" : [
-                f"{relative_checkpoint_path}/prediction_heads/linear_feature_head/DUSt3R_512_linearfeature_head1.pth",
-                f"{relative_checkpoint_path}/prediction_heads/linear_feature_head/DUSt3R_512_linearfeature_head2.pth",
             ],
-            "regressor" : None
+            "ckpt_path": f"{relative_checkpoint_path}/examples/original_dust3r/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth",
         },
-        "dust3r_224_linear" : {
-            "encoder" : f"{relative_checkpoint_path}/encoders/CroCo_Encoder_224_DUSt3R_linear.pth",
-            "decoder" : f"{relative_checkpoint_path}/info_sharing/cross_attn_transformer/Two_View_Cross_Attention_Transformer_DUSt3R_224_linear.pth",
-            "feature_head" : [
-                f"{relative_checkpoint_path}/prediction_heads/linear_feature_head/DUSt3R_224_linearfeature_head1.pth",
-                f"{relative_checkpoint_path}/prediction_heads/linear_feature_head/DUSt3R_224_linearfeature_head2.pth",
+        "dust3r_512_dpt_mast3r": {
+            "encoder": f"{relative_checkpoint_path}/encoders/CroCo_Encoder_512_MASt3R.pth",
+            "decoder": f"{relative_checkpoint_path}/info_sharing/cross_attn_transformer/Two_View_Cross_Attention_Transformer_MASt3R_512_dpt.pth",
+            "feature_head": [
+                f"{relative_checkpoint_path}/prediction_heads/dpt_feature_head/MASt3R_512_dpt_feature_head1.pth",
+                f"{relative_checkpoint_path}/prediction_heads/dpt_feature_head/MASt3R_512_dpt_feature_head2.pth",
             ],
-            "regressor" : None
+            "regressor": [
+                f"{relative_checkpoint_path}/prediction_heads/dpt_reg_processor/MASt3R_512_dpt_reg_processor1.pth",
+                f"{relative_checkpoint_path}/prediction_heads/dpt_reg_processor/MASt3R_512_dpt_reg_processor2.pth",
+            ],
+            "ckpt_path": f"{relative_checkpoint_path}/examples/original_dust3r/DUSt3R_ViTLarge_BaseDecoder_512_dpt_mast3r.pth",
+        },
+        "dust3r_512_linear": {
+            "encoder": f"{relative_checkpoint_path}/encoders/CroCo_Encoder_512_DUSt3R_linear.pth",
+            "decoder": f"{relative_checkpoint_path}/info_sharing/cross_attn_transformer/Two_View_Cross_Attention_Transformer_DUSt3R_512_linear.pth",
+            "feature_head": [
+                f"{relative_checkpoint_path}/prediction_heads/linear_feature_head/DUSt3R_512_linear_feature_head1.pth",
+                f"{relative_checkpoint_path}/prediction_heads/linear_feature_head/DUSt3R_512_linear_feature_head2.pth",
+            ],
+            "regressor": None,
+            "ckpt_path": f"{relative_checkpoint_path}/examples/original_dust3r/DUSt3R_ViTLarge_BaseDecoder_512_linear.pth",
+        },
+        "dust3r_224_linear": {
+            "encoder": f"{relative_checkpoint_path}/encoders/CroCo_Encoder_224_DUSt3R_linear.pth",
+            "decoder": f"{relative_checkpoint_path}/info_sharing/cross_attn_transformer/Two_View_Cross_Attention_Transformer_DUSt3R_224_linear.pth",
+            "feature_head": [
+                f"{relative_checkpoint_path}/prediction_heads/linear_feature_head/DUSt3R_224_linear_feature_head1.pth",
+                f"{relative_checkpoint_path}/prediction_heads/linear_feature_head/DUSt3R_224_linear_feature_head2.pth",
+            ],
+            "regressor": None,
+            "ckpt_path": f"{relative_checkpoint_path}/examples/original_dust3r/DUSt3R_ViTLarge_BaseDecoder_224_linear.pth",
         },
     }
 
     MODEL_TO_VERIFICATION_PATH = {
-        "dust3r_512_dpt" : {
-            "head_output" : os.path.join(os.path.dirname(current_file_path), "../../../reference_data/dust3r_pre_cvpr", "DUSt3R_512_dpt", "03_head_output.npz")
+        "dust3r_512_dpt": {
+            "head_output": os.path.join(
+                os.path.dirname(current_file_path),
+                "../../../reference_data/dust3r_pre_cvpr",
+                "DUSt3R_512_dpt",
+                "03_head_output.npz",
+            )
         },
-        "dust3r_512_linear" : {
-            "head_output" : os.path.join(os.path.dirname(current_file_path), "../../../reference_data/dust3r_pre_cvpr", "DUSt3R_512_linear", "03_head_output.npz")
+        "dust3r_512_dpt_mast3r": {
+            "head_output": os.path.join(
+                os.path.dirname(current_file_path),
+                "../../../reference_data/dust3r_pre_cvpr",
+                "MASt3R_512_dpt",
+                "03_head_output.npz",
+            )
         },
-        "dust3r_224_linear" : {
-            "head_output" : os.path.join(os.path.dirname(current_file_path), "../../../reference_data/dust3r_pre_cvpr", "DUSt3R_224_linear", "03_head_output.npz")
-        }
+        "dust3r_512_linear": {
+            "head_output": os.path.join(
+                os.path.dirname(current_file_path),
+                "../../../reference_data/dust3r_pre_cvpr",
+                "DUSt3R_512_linear",
+                "03_head_output.npz",
+            )
+        },
+        "dust3r_224_linear": {
+            "head_output": os.path.join(
+                os.path.dirname(current_file_path),
+                "../../../reference_data/dust3r_pre_cvpr",
+                "DUSt3R_224_linear",
+                "03_head_output.npz",
+            )
+        },
     }
 
-    model_configurations = [ "dust3r_512_dpt", "dust3r_512_linear", "dust3r_224_linear" ]
+    model_configurations = ["dust3r_512_dpt", "dust3r_512_linear", "dust3r_224_linear", "dust3r_512_dpt_mast3r"]
 
+    # Test different DUSt3R models using UniCeption modules
     for model_name in model_configurations:
-
-        # Initialize DUSt3R 512 DPT model using UniCeption modules
         dust3r_model = DUSt3R(
             name=model_name,
             img_size=(512, 512) if "512" in model_name else (224, 224),
-            patch_embed_cls="ManyAR_PatchEmbed" if "512" in model_name else "PatchEmbedDust3R",
+            patch_embed_cls="PatchEmbedDust3R",
             pred_head_type="linear" if "linear" in model_name else "dpt",
-            pretrained_encoder_checkpoint_path=MODEL_TO_CHECKPOINT_PATH[model_name]["encoder"],
-            pretrained_decoder_checkpoint_path=MODEL_TO_CHECKPOINT_PATH[model_name]["decoder"],
-            pretrained_pred_head_checkpoint_paths=MODEL_TO_CHECKPOINT_PATH[model_name]["feature_head"],
-            pretrained_pred_head_regressor_checkpoint_paths=MODEL_TO_CHECKPOINT_PATH[model_name]["regressor"],
+            pretrained_checkpoint_path=MODEL_TO_CHECKPOINT_PATH[model_name]["ckpt_path"],
+            # pretrained_encoder_checkpoint_path=MODEL_TO_CHECKPOINT_PATH[model_name]["encoder"],
+            # pretrained_decoder_checkpoint_path=MODEL_TO_CHECKPOINT_PATH[model_name]["decoder"],
+            # pretrained_pred_head_checkpoint_paths=MODEL_TO_CHECKPOINT_PATH[model_name]["feature_head"],
+            # pretrained_pred_head_regressor_checkpoint_paths=MODEL_TO_CHECKPOINT_PATH[model_name]["regressor"],
+            # override_encoder_checkpoint_attributes=True,
         )
         print("DUSt3R model initialized successfully!")
-        dust3r_model.cuda()
+
+        # Initalize device
+        if torch.cuda.is_available():
+            device = "cuda:0"
+        else:
+            device = "cpu"
+        dust3r_model.to(device)
 
         # Initalize two example images
         img0_url = (
@@ -435,35 +500,35 @@ if __name__ == "__main__":
         # Normalize images according to DUSt3R's normalization
         img0_tensor = (img0_tensor - 0.5) / 0.5
         img1_tensor = (img1_tensor - 0.5) / 0.5
-        img_tensor = torch.cat((img0_tensor, img1_tensor), dim=0).cuda()
+        img_tensor = torch.cat((img0_tensor, img1_tensor), dim=0).to(device)
 
         # Run a forward pass
         view1 = {"img": img_tensor, "instance": [0, 1], "data_norm_type": "dust3r"}
-        view2 = {"img": view1["img"][[1, 0]].clone().cuda(), "instance": [1, 0], "data_norm_type": "dust3r"}
+        view2 = {"img": view1["img"][[1, 0]].clone().to(device), "instance": [1, 0], "data_norm_type": "dust3r"}
 
         res1, res2 = dust3r_model(view1, view2)
         print("Forward pass completed successfully!")
 
-        # automatically test the results against the reference result from vanilla dust3r code if they exist
+        # Automatically test the results against the reference result from vanilla dust3r code if they exist
         reference_output_path = MODEL_TO_VERIFICATION_PATH[model_name]["head_output"]
         if os.path.exists(reference_output_path):
             reference_output_data = np.load(reference_output_path)
 
-            # check against the reference output
+            # Check against the reference output
             check_dict = {
-                "head1_pts3d" : (
+                "head1_pts3d": (
                     res1["pts3d"].detach().cpu().numpy(),
                     reference_output_data["head1_pts3d"],
                 ),
-                "head2_pts3d" : (
+                "head2_pts3d": (
                     res2["pts3d_in_other_view"].detach().cpu().numpy(),
                     reference_output_data["head2_pts3d"],
                 ),
-                "head1_conf" : (
+                "head1_conf": (
                     res1["conf"].detach().squeeze(-1).cpu().numpy(),
                     reference_output_data["head1_conf"],
                 ),
-                "head2_conf" : (
+                "head2_conf": (
                     res2["conf"].detach().squeeze(-1).cpu().numpy(),
                     reference_output_data["head2_conf"],
                 ),
@@ -478,32 +543,32 @@ if __name__ == "__main__":
 
                 assert abs_error < 1e-2 and rel_error < 1e-3, f"Error in {key} output"
 
-
         points1 = res1["pts3d"][0].detach().cpu().numpy()
         points2 = res2["pts3d_in_other_view"][0].detach().cpu().numpy()
         conf_mask1 = res1["conf"][0].squeeze(-1).detach().cpu().numpy() > 3.0
         conf_mask2 = res2["conf"][0].squeeze(-1).detach().cpu().numpy() > 3.0
 
         if args.viz:
-            rr.script_setup(args, f"DUSt3R_Inference")
-            rr.set_time_seconds("stable_time", 0)
-            rr.log("dust3r", rr.ViewCoordinates.RDF, static=True)
+            rr.log(f"{model_name}", rr.ViewCoordinates.RDF, static=True)
             filtered_pts3d1 = points1[conf_mask1]
             filtered_pts3d1_colors = np.array(img0)[..., :3][conf_mask1] / 255
             filtered_pts3d2 = points2[conf_mask2]
             filtered_pts3d2_colors = np.array(img1)[..., :3][conf_mask2] / 255
             rr.log(
-                "dust3r/view1",
+                f"{model_name}/view1",
                 rr.Points3D(
                     positions=filtered_pts3d1.reshape(-1, 3),
                     colors=filtered_pts3d1_colors.reshape(-1, 3),
                 ),
             )
             rr.log(
-                "dust3r/view2",
+                f"{model_name}/view2",
                 rr.Points3D(
                     positions=filtered_pts3d2.reshape(-1, 3),
                     colors=filtered_pts3d2_colors.reshape(-1, 3),
                 ),
             )
-            print("Visualizations logged to Rerun: http://localhost:2006?url=ws://localhost:2005")
+            print(
+                "Visualizations logged to Rerun: http://localhost:<rr-viewer-port>?url=ws://localhost:<ws-server-port>. "
+                "Replace <rr-viewer-port> and <ws-server-port> with the actual ports."
+            )
