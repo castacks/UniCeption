@@ -1,6 +1,6 @@
 # UniCeption
 
-Repository to support the AirLab's Generalizable Perception Stack.
+A Generalizable Perception Stack for Scene Understanding.
 
 ## Installation
 
@@ -13,6 +13,10 @@ git clone git@github.com:castacks/UniCeption.git
 Install the `uniception` package in development mode by running the following commands:
 
 ```bash
+# For Conda Environment
+conda create --name uniception python=3.10
+conda activate uniception
+# For Python Virtual Environment
 virtualenv uniception
 source uniception/bin/activate
 pip install torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0
@@ -25,11 +29,39 @@ cd ../../../../../
 pip install -e .
 ```
 
+### Downloading UniCeption Format Checkpoints
+
+To download the UniCeption format custom checkpoints, run the following command:
+
+```bash
+python3 scripts/download_checkpoints.py
+```
+
+For options to download specific folders please refer to the script's help message:
+
+```
+usage: download_checkpoints.py [-h] [--folders FOLDERS [FOLDERS ...]] [--destination DESTINATION]
+
+Download UniCeption format checkpoints from AirLab Data Server
+
+options:
+  -h, --help            show this help message and exit
+  --folders FOLDERS [FOLDERS ...]
+                        List of folders to download (default: all folders). Choices: encoders, info_sharing, prediction_heads, examples
+  --destination DESTINATION
+                        Destination folder for downloaded checkpoints
+```
+
+
 ## Currently Supported Components
 
 ### Encoders
 
-Please refer to the `uniception/models/encoders` directory for the supported encoders and documentation for adding new encoders.
+Please refer to the `uniception/models/encoders` directory for the supported encoders and documentation for adding new encoders. The supported encoders can be listed by running:
+
+```bash
+python3 -m uniception.models.encoders.list
+```
 
 ## Information Sharing Blocks
 

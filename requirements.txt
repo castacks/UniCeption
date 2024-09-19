@@ -8,3 +8,4 @@ scikit-learn
 einops
 rerun-sdk
 pre-commit
+minio
