@@ -1,6 +1,8 @@
 # UniCeption
 
-A Generalizable Perception Stack for Scene Understanding.
+A Generalizable Perception Stack for Scene Understanding. 
+
+Please refer to the [Developer Guidelines](#developer-guidelines) for contributing to the project.
 
 ## Installation
 
@@ -13,12 +15,14 @@ git clone git@github.com:castacks/UniCeption.git
 Install the `uniception` package in development mode by running the following commands:
 
 ```bash
+# Please use Conda or Python Virtual Environment based on your preference
 # For Conda Environment
 conda create --name uniception python=3.10
 conda activate uniception
 # For Python Virtual Environment
 virtualenv uniception
 source uniception/bin/activate
+# Install PyTorch and other dependencies
 pip install torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0
 pip install -U xformers==0.0.27.post2 --index-url https://download.pytorch.org/whl/cu121
 pip install -r requirements.txt
@@ -78,3 +82,5 @@ Please follow these guidelines when contributing to UniCeption:
 - **Documentation**: Add docstrings to all classes and methods.
 - **Unit Tests**: Add necessary unit tests to the `tests` folder.
 - **Linting**: Run `black` & `isort` on your code before committing. For example, you can run `black . && isort .`.
+
+Since UniCeption is currently a private repo, please do not push to the main branch directly. Instead, create a new branch for your changes and submit a pull request for review.
