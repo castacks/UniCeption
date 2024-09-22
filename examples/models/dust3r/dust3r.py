@@ -66,7 +66,7 @@ class DUSt3R(nn.Module):
         pos_embed: str = "RoPE100",
         pretrained_checkpoint_path: str = None,
         pretrained_encoder_checkpoint_path: str = None,
-        pretrained_decoder_checkpoint_path: str = None,
+        pretrained_info_sharing_checkpoint_path: str = None,
         pretrained_pred_head_checkpoint_paths: List[str] = [None, None],
         pretrained_pred_head_regressor_checkpoint_paths: List[str] = [None, None],
         override_encoder_checkpoint_attributes: bool = False,
@@ -95,7 +95,7 @@ class DUSt3R(nn.Module):
             landscape_only (bool): Run downstream head only in landscape orientation. (default: True)
             pretrained_checkpoint_path (str): Path to pretrained checkpoint. (default: None)
             pretrained_encoder_checkpoint_path (str): Path to pretrained encoder checkpoint. (default: None)
-            pretrained_decoder_checkpoint_path (str): Path to pretrained decoder checkpoint. (default: None)
+            pretrained_info_sharing_checkpoint_path (str): Path to pretrained info_sharing checkpoint. (default: None)
             pretrained_pred_head_checkpoint_paths (List[str]): Paths to pretrained prediction head checkpoints. (default: None)
             pretrained_pred_head_regressor_checkpoint_paths (List[str]): Paths to pretrained prediction head regressor checkpoints. (default: None)
             override_encoder_checkpoint_attributes (bool): Whether to override encoder checkpoint attributes. (default: False)
@@ -114,7 +114,7 @@ class DUSt3R(nn.Module):
         self.pos_embed = pos_embed
         self.pretrained_checkpoint_path = pretrained_checkpoint_path
         self.pretrained_encoder_checkpoint_path = pretrained_encoder_checkpoint_path
-        self.pretrained_decoder_checkpoint_path = pretrained_decoder_checkpoint_path
+        self.pretrained_info_sharing_checkpoint_path = pretrained_info_sharing_checkpoint_path
         self.pretrained_pred_head_checkpoint_paths = pretrained_pred_head_checkpoint_paths
         self.pretrained_pred_head_regressor_checkpoint_paths = pretrained_pred_head_regressor_checkpoint_paths
         self.override_encoder_checkpoint_attributes = override_encoder_checkpoint_attributes
@@ -136,23 +136,23 @@ class DUSt3R(nn.Module):
         # Initialize Multi-View Cross Attention Transformer
         if self.pred_head_type == "linear":
             # Returns only normalized last layer features
-            self.decoder = MultiViewCrossAttentionTransformer(
-                name="base_decoder",
+            self.info_sharing = MultiViewCrossAttentionTransformer(
+                name="base_info_sharing",
                 input_embed_dim=self.encoder.enc_embed_dim,
                 num_views=2,
                 custom_positional_encoding=self.rope,
-                pretrained_checkpoint_path=pretrained_decoder_checkpoint_path,
+                pretrained_checkpoint_path=pretrained_info_sharing_checkpoint_path,
             )
         elif self.pred_head_type == "dpt":
             # Returns intermediate features and normalized last layer features
-            self.decoder = MultiViewCrossAttentionTransformerIFR(
-                name="base_decoder",
+            self.info_sharing = MultiViewCrossAttentionTransformerIFR(
+                name="base_info_sharing",
                 input_embed_dim=self.encoder.enc_embed_dim,
                 num_views=2,
                 indices=[5, 8],
                 norm_intermediate=False,
                 custom_positional_encoding=self.rope,
-                pretrained_checkpoint_path=pretrained_decoder_checkpoint_path,
+                pretrained_checkpoint_path=pretrained_info_sharing_checkpoint_path,
             )
         else:
             raise ValueError(f"Invalid prediction head type: {pred_head_type}. Must be 'linear' or 'dpt'.")
@@ -161,14 +161,14 @@ class DUSt3R(nn.Module):
         if pred_head_type == "linear":
             # Initialize Prediction Head 1
             self.head1 = LinearFeature(
-                input_feature_dim=self.decoder.dim,
+                input_feature_dim=self.info_sharing.dim,
                 output_dim=pred_head_output_dim,
                 patch_size=self.encoder.patch_size,
                 pretrained_checkpoint_path=pretrained_pred_head_checkpoint_paths[0],
             )
             # Initialize Prediction Head 2
             self.head2 = LinearFeature(
-                input_feature_dim=self.decoder.dim,
+                input_feature_dim=self.info_sharing.dim,
                 output_dim=pred_head_output_dim,
                 patch_size=self.encoder.patch_size,
                 pretrained_checkpoint_path=pretrained_pred_head_checkpoint_paths[1],
@@ -178,7 +178,7 @@ class DUSt3R(nn.Module):
             self.dpt_feature_head1 = DPTFeature(
                 patch_size=self.encoder.patch_size,
                 hooks=[0, 1, 2, 3],
-                input_feature_dims=[self.encoder.enc_embed_dim] + [self.decoder.dim] * 3,
+                input_feature_dims=[self.encoder.enc_embed_dim] + [self.info_sharing.dim] * 3,
                 feature_dim=pred_head_feature_dim,
                 pretrained_checkpoint_path=pretrained_pred_head_checkpoint_paths[0],
             )
@@ -192,7 +192,7 @@ class DUSt3R(nn.Module):
             self.dpt_feature_head2 = DPTFeature(
                 patch_size=self.encoder.patch_size,
                 hooks=[0, 1, 2, 3],
-                input_feature_dims=[self.encoder.enc_embed_dim] + [self.decoder.dim] * 3,
+                input_feature_dims=[self.encoder.enc_embed_dim] + [self.info_sharing.dim] * 3,
                 feature_dim=pred_head_feature_dim,
                 pretrained_checkpoint_path=pretrained_pred_head_checkpoint_paths[1],
             )
@@ -286,40 +286,42 @@ class DUSt3R(nn.Module):
         feat1, feat2 = self._encode_symmetrized(view1, view2)
 
         # Combine all images into view-centric representation
-        decoder_input = MultiViewCrossAttentionTransformerInput(features=[feat1, feat2])
+        info_sharing_input = MultiViewCrossAttentionTransformerInput(features=[feat1, feat2])
         if self.pred_head_type == "linear":
-            final_decoder_multi_view_feat = self.decoder(decoder_input)
+            final_info_sharing_multi_view_feat = self.info_sharing(info_sharing_input)
         elif self.pred_head_type == "dpt":
-            final_decoder_multi_view_feat, intermediate_decoder_multi_view_feat = self.decoder(decoder_input)
+            final_info_sharing_multi_view_feat, intermediate_info_sharing_multi_view_feat = self.info_sharing(
+                info_sharing_input
+            )
 
         if self.pred_head_type == "linear":
             # Define feature dictionary for linear head
-            decoder_outputs = {
-                "1": final_decoder_multi_view_feat.features[0].float(),
-                "2": final_decoder_multi_view_feat.features[1].float(),
+            info_sharing_outputs = {
+                "1": final_info_sharing_multi_view_feat.features[0].float(),
+                "2": final_info_sharing_multi_view_feat.features[1].float(),
             }
         elif self.pred_head_type == "dpt":
             # Define feature dictionary for DPT head
-            decoder_outputs = {
+            info_sharing_outputs = {
                 "1": [
                     feat1.float(),
-                    intermediate_decoder_multi_view_feat[0].features[0].float(),
-                    intermediate_decoder_multi_view_feat[1].features[0].float(),
-                    final_decoder_multi_view_feat.features[0].float(),
+                    intermediate_info_sharing_multi_view_feat[0].features[0].float(),
+                    intermediate_info_sharing_multi_view_feat[1].features[0].float(),
+                    final_info_sharing_multi_view_feat.features[0].float(),
                 ],
                 "2": [
                     feat2.float(),
-                    intermediate_decoder_multi_view_feat[0].features[1].float(),
-                    intermediate_decoder_multi_view_feat[1].features[1].float(),
-                    final_decoder_multi_view_feat.features[1].float(),
+                    intermediate_info_sharing_multi_view_feat[0].features[1].float(),
+                    intermediate_info_sharing_multi_view_feat[1].features[1].float(),
+                    final_info_sharing_multi_view_feat.features[1].float(),
                 ],
             }
 
         # Downstream task prediction
         with torch.autocast("cuda", enabled=False):
             # Prediction heads
-            head_output1 = self._downstream_head(1, decoder_outputs, shape1)
-            head_output2 = self._downstream_head(2, decoder_outputs, shape2)
+            head_output1 = self._downstream_head(1, info_sharing_outputs, shape1)
+            head_output2 = self._downstream_head(2, info_sharing_outputs, shape2)
 
             # Post-process outputs
             final_output1 = self.adaptor(
@@ -374,7 +376,7 @@ if __name__ == "__main__":
     MODEL_TO_CHECKPOINT_PATH = {
         "dust3r_512_dpt": {
             "encoder": f"{relative_checkpoint_path}/encoders/CroCo_Encoder_512_DUSt3R_dpt.pth",
-            "decoder": f"{relative_checkpoint_path}/info_sharing/cross_attn_transformer/Two_View_Cross_Attention_Transformer_DUSt3R_512_dpt.pth",
+            "info_sharing": f"{relative_checkpoint_path}/info_sharing/cross_attn_transformer/Two_View_Cross_Attention_Transformer_DUSt3R_512_dpt.pth",
             "feature_head": [
                 f"{relative_checkpoint_path}/prediction_heads/dpt_feature_head/DUSt3R_512_dpt_feature_head1.pth",
                 f"{relative_checkpoint_path}/prediction_heads/dpt_feature_head/DUSt3R_512_dpt_feature_head2.pth",
@@ -387,7 +389,7 @@ if __name__ == "__main__":
         },
         "dust3r_512_dpt_mast3r": {
             "encoder": f"{relative_checkpoint_path}/encoders/CroCo_Encoder_512_MASt3R.pth",
-            "decoder": f"{relative_checkpoint_path}/info_sharing/cross_attn_transformer/Two_View_Cross_Attention_Transformer_MASt3R_512_dpt.pth",
+            "info_sharing": f"{relative_checkpoint_path}/info_sharing/cross_attn_transformer/Two_View_Cross_Attention_Transformer_MASt3R_512_dpt.pth",
             "feature_head": [
                 f"{relative_checkpoint_path}/prediction_heads/dpt_feature_head/MASt3R_512_dpt_feature_head1.pth",
                 f"{relative_checkpoint_path}/prediction_heads/dpt_feature_head/MASt3R_512_dpt_feature_head2.pth",
@@ -400,7 +402,7 @@ if __name__ == "__main__":
         },
         "dust3r_512_linear": {
             "encoder": f"{relative_checkpoint_path}/encoders/CroCo_Encoder_512_DUSt3R_linear.pth",
-            "decoder": f"{relative_checkpoint_path}/info_sharing/cross_attn_transformer/Two_View_Cross_Attention_Transformer_DUSt3R_512_linear.pth",
+            "info_sharing": f"{relative_checkpoint_path}/info_sharing/cross_attn_transformer/Two_View_Cross_Attention_Transformer_DUSt3R_512_linear.pth",
             "feature_head": [
                 f"{relative_checkpoint_path}/prediction_heads/linear_feature_head/DUSt3R_512_linear_feature_head1.pth",
                 f"{relative_checkpoint_path}/prediction_heads/linear_feature_head/DUSt3R_512_linear_feature_head2.pth",
@@ -410,7 +412,7 @@ if __name__ == "__main__":
         },
         "dust3r_224_linear": {
             "encoder": f"{relative_checkpoint_path}/encoders/CroCo_Encoder_224_DUSt3R_linear.pth",
-            "decoder": f"{relative_checkpoint_path}/info_sharing/cross_attn_transformer/Two_View_Cross_Attention_Transformer_DUSt3R_224_linear.pth",
+            "info_sharing": f"{relative_checkpoint_path}/info_sharing/cross_attn_transformer/Two_View_Cross_Attention_Transformer_DUSt3R_224_linear.pth",
             "feature_head": [
                 f"{relative_checkpoint_path}/prediction_heads/linear_feature_head/DUSt3R_224_linear_feature_head1.pth",
                 f"{relative_checkpoint_path}/prediction_heads/linear_feature_head/DUSt3R_224_linear_feature_head2.pth",
@@ -466,7 +468,7 @@ if __name__ == "__main__":
             pred_head_type="linear" if "linear" in model_name else "dpt",
             pretrained_checkpoint_path=MODEL_TO_CHECKPOINT_PATH[model_name]["ckpt_path"],
             # pretrained_encoder_checkpoint_path=MODEL_TO_CHECKPOINT_PATH[model_name]["encoder"],
-            # pretrained_decoder_checkpoint_path=MODEL_TO_CHECKPOINT_PATH[model_name]["decoder"],
+            # pretrained_info_sharing_checkpoint_path=MODEL_TO_CHECKPOINT_PATH[model_name]["info_sharing"],
             # pretrained_pred_head_checkpoint_paths=MODEL_TO_CHECKPOINT_PATH[model_name]["feature_head"],
             # pretrained_pred_head_regressor_checkpoint_paths=MODEL_TO_CHECKPOINT_PATH[model_name]["regressor"],
             # override_encoder_checkpoint_attributes=True,

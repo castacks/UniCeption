@@ -2,9 +2,9 @@
 Adaptors for the UniCeption Prediction Heads.
 """
 
-from dataclasses import dataclass
+from functools import lru_cache
 from math import isfinite
-from typing import Dict, List, Optional, Tuple
+from typing import List, Tuple, Union
 
 import numpy as np
 import torch
@@ -12,7 +12,6 @@ import torch.nn as nn
 
 from uniception.models.prediction_heads import (
     AdaptorInput,
-    AdaptorOutput,
     MaskAdaptorOutput,
     RegressionAdaptorOutput,
     RegressionWithConfidenceAdaptorOutput,
@@ -24,10 +23,11 @@ class FlowAdaptor(UniCeptionAdaptorBase):
     def __init__(
         self,
         name: str,
-        flow_mean: torch.Tensor,
-        flow_std: torch.Tensor,
+        flow_mean: Union[Tuple[float, float], List[float]],
+        flow_std: Union[Tuple[float, float], List[float]],
         base_shape: Tuple[int, int],
         scale_strategy: str,
+        output_normalized_coordinate: bool = False,
         *args,
         **kwargs,
     ):
@@ -44,15 +44,31 @@ class FlowAdaptor(UniCeptionAdaptorBase):
             - scale_width: scale the output for "none" by actual width divided by base width for both X and Y
             - scale_height: scale the output for "none" by actual height divided by base height for both X and Y
             - scale_both: scale the output for "none" by actual dimension / base dimension individually for X and Y
+            output_normalized_coordinate (bool): If True, will subtract the (X, Y) coordinate of the output pixel from input x after it is being scaled to pixel coordinates.
+            In other words, the network will predict the pixel position that the source pixel will land on the target image, rather than the flow.
         """
         super().__init__(name, required_channels=2, *args, **kwargs)
 
         self.name: str = name
+
+        flow_mean = list(flow_mean)
+        flow_std = list(flow_std)
+
+        # handle the case where flow_mean and flow_std are passed as tuples
+        if isinstance(flow_mean, tuple) or isinstance(flow_mean, list):
+            flow_mean = torch.tensor(flow_mean, dtype=torch.float32)
+            assert flow_mean.shape == (2,), f"Flow mean must be a 2D tensor, got {flow_mean.shape}"
+
+        if isinstance(flow_std, tuple) or isinstance(flow_std, list):
+            flow_std = torch.tensor(flow_std, dtype=torch.float32)
+            assert flow_std.shape == (2,), f"Flow std must be a 2D tensor, got {flow_std.shape}"
+
         self.register_buffer("flow_mean", flow_mean.view(1, 2, 1, 1))
         self.register_buffer("flow_std", flow_std.view(1, 2, 1, 1))
 
-        self.base_shape = base_shape
+        self.base_shape = list(base_shape)
         self.scale_strategy = scale_strategy
+        self.output_normalized_coordinate = output_normalized_coordinate
 
     def forward(self, adaptor_input: AdaptorInput):
         """
@@ -73,14 +89,30 @@ class FlowAdaptor(UniCeptionAdaptorBase):
 
         output_shape = adaptor_input.output_shape_hw
 
-        x_scale, y_scale = self._get_xy_scale(output_shape)
+        if not self.output_normalized_coordinate:
 
-        # scale the flow by stored mean, std and scaling factors
-        flow_mean = self.flow_mean * x_scale
-        flow_std = self.flow_std * x_scale
+            x_scale, y_scale = self._get_xy_scale(output_shape)
 
-        # unnormalize the flow
-        x = x * flow_std + flow_mean
+            # scale the flow by stored mean, std and scaling factors
+            flow_mean = self.flow_mean * torch.tensor([x_scale, y_scale], dtype=torch.float32, device=x.device).view(
+                1, 2, 1, 1
+            )
+            flow_std = self.flow_std * torch.tensor([x_scale, y_scale], dtype=torch.float32, device=x.device).view(
+                1, 2, 1, 1
+            )
+
+            # unnormalize the flow
+            x = x * flow_std + flow_mean
+        else:
+            # optionally subtract the coordinate bias
+            wh_normalizer = torch.tensor(
+                adaptor_input.output_shape_hw[::-1], dtype=torch.float32, device=x.device
+            ).view(1, 2, 1, 1)
+
+            x = 0.5 * (x + 1) * wh_normalizer + 0.5
+
+            coords = self._get_coordinate_bias(output_shape, x.device)
+            x = x - coords
 
         return RegressionAdaptorOutput(value=x)
 
@@ -104,6 +136,33 @@ class FlowAdaptor(UniCeptionAdaptorBase):
             return output_shape[1] / self.base_shape[1], output_shape[0] / self.base_shape[0]
         else:
             raise ValueError(f"Invalid scaling strategy: {self.scale_strategy}")
+
+    @lru_cache(maxsize=10)
+    def _get_coordinate_bias(self, output_shape: Tuple[int, int], device: str):
+        """
+        Get the (X, Y) coordinate image for the given output shape.
+
+        Args:
+            output_shape (Tuple[int, int]): HW Shape of the output.
+            device: device to store the tensor on
+
+        Returns:
+            torch.Tensor: (2, H, W) tensor with X and Y coordinates, at device. This coordinate value will
+            include 0.5 px offset - i.e. the center of the top-left pixel is (0.5, 0.5).
+        """
+
+        H, W = output_shape
+
+        coords = torch.stack(
+            torch.meshgrid(
+                torch.arange(0, W, device=device, dtype=torch.float32) + 0.5,
+                torch.arange(0, H, device=device, dtype=torch.float32) + 0.5,
+                indexing="xy",
+            ),
+            dim=0,
+        )
+
+        return coords
 
 
 class DepthAdaptor(UniCeptionAdaptorBase):
@@ -329,6 +388,7 @@ class FlowWithConfidenceAdaptor(ValueWithConfidenceAdaptor):
         flow_std: torch.Tensor,
         base_shape: Tuple[int, int],
         scale_strategy: str,
+        output_normalized_coordinate: bool,
         # confidence adaptor
         confidence_type: str,
         vmin: float,
@@ -340,7 +400,12 @@ class FlowWithConfidenceAdaptor(ValueWithConfidenceAdaptor):
         Adaptor for the Flow with Confidence head in UniCeption.
         """
         flow_adaptor = FlowAdaptor(
-            name=f"{name}", flow_mean=flow_mean, flow_std=flow_std, base_shape=base_shape, scale_strategy=scale_strategy
+            name=f"{name}",
+            flow_mean=flow_mean,
+            flow_std=flow_std,
+            base_shape=base_shape,
+            scale_strategy=scale_strategy,
+            output_normalized_coordinate=output_normalized_coordinate,
         )
 
         confidence_adaptor = ConfidenceAdaptor(

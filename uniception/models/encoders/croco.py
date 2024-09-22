@@ -11,7 +11,7 @@ import torch.nn as nn
 from uniception.models.encoders.base import UniCeptionViTEncoderBase, ViTEncoderInput, ViTEncoderOutput
 from uniception.models.libs.croco.blocks import Block
 from uniception.models.libs.croco.patch_embed import get_patch_embed
-from uniception.models.libs.croco.pos_embed import RoPE2D, get_2d_sincos_pos_embed
+from uniception.models.libs.croco.pos_embed import RoPE2D
 from uniception.models.utils.intermediate_feature_return import IntermediateFeatureReturner, feature_take_indices
 
 
@@ -51,7 +51,7 @@ class CroCoEncoder(UniCeptionViTEncoderBase):
             enc_num_heads (int, optional): The number of encoder heads. Defaults to 12.
             mlp_ratio (int, optional): The MLP ratio used for the CroCo encoder transformer. Defaults to 4.
             norm_layer (nn.Module, optional): The normalization layer to use in the transformer. Defaults to nn.LayerNorm with eps=1e-6.
-            pos_embed (str, optional): Positional Embedding. Defaults to 'RoPE100'. Options: ['cosine', 'RoPE100'].
+            pos_embed (str, optional): Positional Embedding. Defaults to 'RoPE100'. Options: ['RoPEfreq'].
             pretrained_checkpoint_path (str, optional): Path to the pretrained checkpoint. Defaults to None.
         """
         # Init the base class
@@ -76,13 +76,7 @@ class CroCoEncoder(UniCeptionViTEncoderBase):
 
         # Init the positional embedding
         self.pos_embed = pos_embed
-        if pos_embed == "cosine":
-            enc_pos_embed = get_2d_sincos_pos_embed(
-                enc_embed_dim, int(self.patch_embed.num_patches**0.5), n_cls_token=0
-            )
-            self.register_buffer("enc_pos_embed", torch.from_numpy(enc_pos_embed).float())
-            self.rope = None  # nothing for cosine
-        elif pos_embed.startswith("RoPE"):  # eg RoPE100
+        if pos_embed.startswith("RoPE"):  # eg RoPE100
             self.enc_pos_embed = None  # nothing to add in the encoder with RoPE
             self.dec_pos_embed = None  # nothing to add in the decoder with RoPE
             if RoPE2D is None:

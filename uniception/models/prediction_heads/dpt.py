@@ -62,6 +62,7 @@ class DPTFeature(nn.Module):
         if isinstance(input_feature_dims, int):
             input_feature_dims = 4 * [input_feature_dims]
         else:
+            input_feature_dims = input_feature_dims
             assert isinstance(input_feature_dims, List) and len(input_feature_dims) == 4
 
         self.input_feature_dims = input_feature_dims
@@ -72,6 +73,9 @@ class DPTFeature(nn.Module):
         self.scratch.refinenet2 = make_fusion_block(feature_dim, use_bn, output_width_ratio)
         self.scratch.refinenet3 = make_fusion_block(feature_dim, use_bn, output_width_ratio)
         self.scratch.refinenet4 = make_fusion_block(feature_dim, use_bn, output_width_ratio)
+
+        # delete resconfunit1 in refinement 4 because it is not used, and will cause error in DDP.
+        del self.scratch.refinenet4.resConfUnit1
 
         if self.input_feature_dims is not None:
             self.init(input_feature_dims=input_feature_dims)
@@ -237,6 +241,7 @@ class DPTRegressionProcessor(nn.Module):
         if hidden_dims is None:
             hidden_dims = [input_feature_dim // 2] * 2
         else:
+            hidden_dims = hidden_dims
             assert isinstance(hidden_dims, List) and len(hidden_dims) == 2
 
         self.conv1 = nn.Conv2d(input_feature_dim, hidden_dims[0], kernel_size=3, stride=1, padding=1)
