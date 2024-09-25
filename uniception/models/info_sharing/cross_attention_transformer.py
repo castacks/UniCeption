@@ -5,7 +5,7 @@ UniCeption Cross-Attention Transformer for Information Sharing
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import partial
-from typing import Callable, List, Optional, Tuple, Union
+from typing import Callable, List, Optional, Tuple, Type, Union
 
 import torch
 import torch.nn as nn
@@ -72,12 +72,12 @@ class MultiViewCrossAttentionTransformer(UniCeptionInfoSharingBase):
         attn_drop: float = 0.0,
         init_values: Optional[float] = None,
         drop_path: float = 0.0,
-        act_layer: nn.Module = nn.GELU,
-        norm_layer: nn.Module = partial(nn.LayerNorm, eps=1e-6),
-        mlp_layer: nn.Module = Mlp,
-        custom_positional_encoding: Callable = None,
+        act_layer: Type[nn.Module] = nn.GELU,
+        norm_layer: Union[Type[nn.Module], Callable[..., nn.Module]] = partial(nn.LayerNorm, eps=1e-6),
+        mlp_layer: Type[nn.Module] = Mlp,
+        custom_positional_encoding: Optional[Callable] = None,
         norm_cross_tokens: bool = True,
-        pretrained_checkpoint_path: str = None,
+        pretrained_checkpoint_path: Optional[str] = None,
         *args,
         **kwargs,
     ):

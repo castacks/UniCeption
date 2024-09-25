@@ -129,3 +129,44 @@ class UniCeptionAdaptorBase(nn.Module):
         """
 
         raise NotImplementedError
+
+
+class AdaptorMap(nn.Module):
+    def __init__(self, *adaptors: UniCeptionAdaptorBase):
+        """
+        AdaptorMap slices the input tensor and passes it to the corresponding adaptors.
+
+        Args:
+            *adaptors (List[UniCeptionAdaptorBase]): List of adaptors in the Adaptor
+        """
+
+        super().__init__()
+        self.adaptors = nn.ModuleDict({adaptor.name: adaptor for adaptor in adaptors})
+
+        self.required_channels = sum([adaptor.required_channels for adaptor in adaptors])
+
+    def forward(
+        self,
+        adaptor_input: AdaptorInput,
+    ) -> Dict[str, AdaptorOutput]:
+        """
+        Run the input through the adaptors and return the output.
+
+        Args:
+            adaptor_input (AdaptorInput): Input to the adaptors.
+
+        Returns:
+            Dict[str, AdaptorOutput]: Output of the adaptors, from adaptor name to AdaptorOutput.
+        """
+
+        # split adaptor input into chunks
+        adaptor_features = torch.split(
+            adaptor_input.decoded_channels, [adaptor.required_channels for adaptor in self.adaptors.values()], dim=1
+        )
+
+        result = {
+            adaptor_name: adaptor(AdaptorInput(adaptor_features[i], adaptor_features[i].shape[2:]))
+            for i, (adaptor_name, adaptor) in enumerate(self.adaptors.items())
+        }
+
+        return result
