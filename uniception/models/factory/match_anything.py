@@ -307,9 +307,21 @@ class MatchAnythingModel(nn.Module):
         3. Passes the decoder output through the prediction heads and adaptors
 
         Args:
+        - view1 (Dict[str, Any]): Input view 1
+          - img (torch.Tensor): BCHW image tensor normalized according to encoder's data_norm_type
+          - instance (List[int]): List of instance indices, or id of the input image
+          - data_norm_type (str): Data normalization type, see uniception.models.encoders.IMAGE_NORMALIZATION_DICT
+        - view2 (Dict[str, Any]): Input view 2
+          - (same structure as view1)
 
         Returns:
-
+        - Dict[str, Any]: Output results
+          - flow (Dict[str, torch.Tensor]): Flow output
+            - flow_output (torch.Tensor): Flow output tensor, BCHW
+            - flow_output_conf (torch.Tensor): Flow output confidence tensor, BCHW
+          - occlusion (Dict[str, torch.Tensor]): Occlusion output
+            - mask (torch.Tensor): probibility of not occluded, BCHW tensor
+            - logits (torch.Tensor): logits of the mask before sigmoid, BCHW
         """
 
         # Get input shapes

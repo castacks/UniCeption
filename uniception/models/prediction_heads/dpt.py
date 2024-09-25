@@ -241,7 +241,6 @@ class DPTRegressionProcessor(nn.Module):
         if hidden_dims is None:
             hidden_dims = [input_feature_dim // 2] * 2
         else:
-            hidden_dims = hidden_dims
             assert isinstance(hidden_dims, List) and len(hidden_dims) == 2
 
         self.conv1 = nn.Conv2d(input_feature_dim, hidden_dims[0], kernel_size=3, stride=1, padding=1)
