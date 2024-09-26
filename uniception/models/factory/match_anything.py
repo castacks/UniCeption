@@ -209,7 +209,7 @@ class MatchAnythingModel(nn.Module):
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path, strict=True, **kw):
         if os.path.isfile(pretrained_model_name_or_path):
-            ckpt = torch.load(pretrained_model_name_or_path, map_location="cpu")
+            ckpt = torch.load(pretrained_model_name_or_path, map_location="cpu", weights_only=False)
             model = cls(**ckpt["model_args"])
             model.load_state_dict(ckpt["model"], strict=strict)
             return model
