@@ -207,9 +207,11 @@ class MatchAnythingModel(nn.Module):
             self.head2 = self.head1
 
     @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, strict=True, **kw):
+    def from_pretrained(cls, pretrained_model_name_or_path, strict=True, use_single_head=False, **kw):
         if os.path.isfile(pretrained_model_name_or_path):
             ckpt = torch.load(pretrained_model_name_or_path, map_location="cpu", weights_only=False)
+            if use_single_head:
+                ckpt["model_args"]["decoder_structure"] = "dual+single"
             model = cls(**ckpt["model_args"])
             model.load_state_dict(ckpt["model"], strict=strict)
             return model
