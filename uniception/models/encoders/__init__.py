@@ -154,7 +154,7 @@ def _make_encoder_test(encoder_str: str, **kwargs) -> UniCeptionEncoderBase:
 
 
 __all__ = [
-    "factory",
+    "encoder_factory",
     "get_available_encoders",
     "print_available_encoder_models",
     "_make_encoder_test",
