@@ -5,7 +5,6 @@ Encoder Class for RADIO (Nvidia)
 from typing import List, Optional, Tuple, Union
 
 import torch
-
 from uniception.models.encoders.base import UniCeptionViTEncoderBase, ViTEncoderInput, ViTEncoderOutput
 from uniception.models.utils.intermediate_feature_return import IntermediateFeatureReturner
 
