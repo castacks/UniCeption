@@ -1,11 +1,21 @@
+import argparse
 import os
 
 import torch
 from match_anything import MatchAnythingModel
 
-from uniception.utils.profile import benchmark_torch_function
+from uniception.models.info_sharing.cross_attention_transformer import (
+    MultiViewCrossAttentionTransformer,
+    MultiViewCrossAttentionTransformerIFR,
+    MultiViewCrossAttentionTransformerInput,
+)
+from uniception.utils.profile import benchmark_torch_function, benchmark_torch_function_with_result
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Profile the MatchAnything model")
+    parser.add_argument("--batch_sizes", nargs="+", type=int, default=[2], help="batch sizes to profile")
+    args = parser.parse_args()
+
     # Initialize device
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
@@ -21,9 +31,9 @@ if __name__ == "__main__":
 
     # Generate random input tensors
     img_size = (224, 224)
-    batch_sizes = [1, 2, 4, 8]
+    shape1, shape2 = img_size, img_size
 
-    for batch_size in batch_sizes:
+    for batch_size in args.batch_sizes:
         # Prepare input views
         view1_instances = range(batch_size)
         view1_img_tensor = torch.randn(batch_size, 3, *img_size).to(device)
@@ -40,4 +50,69 @@ if __name__ == "__main__":
                 execution_time = benchmark_torch_function(model, view1, view2)
                 print(
                     f"\033[92mForward pass for batch size : {batch_size} completed in {execution_time:.3f} milliseconds\033[0m"
+                )
+                execution_time, enoder_output = benchmark_torch_function_with_result(
+                    model._encode_symmetrized, view1, view2
+                )
+                feat1, feat2 = enoder_output
+                print(
+                    f"\033[92mEncoding Symmetrized for batch size : {batch_size} completed in {execution_time:.3f} milliseconds\033[0m"
+                )
+
+                # Pass the features through the decoder
+                decoder_input = MultiViewCrossAttentionTransformerInput(features=[feat1, feat2])
+                if model.head_type == "dpt":
+                    execution_time, decoder_output = benchmark_torch_function_with_result(model.decoder, decoder_input)
+                    final_decoder_multi_view_feat, intermediate_decoder_multi_view_feat = decoder_output
+                elif model.head_type == "linear":
+                    execution_time, final_decoder_multi_view_feat = benchmark_torch_function_with_result(
+                        model.decoder, decoder_input
+                    )
+                print(
+                    f"\033[92mDecoder for batch size : {batch_size} completed in {execution_time:.3f} milliseconds\033[0m"
+                )
+
+                # collect decoder features for the prediction heads
+                if model.head_type == "dpt":
+                    decoder_outputs = {
+                        "1": [
+                            feat1.float(),
+                            intermediate_decoder_multi_view_feat[0].features[0].float(),
+                            intermediate_decoder_multi_view_feat[1].features[0].float(),
+                            final_decoder_multi_view_feat.features[0].float(),
+                        ],
+                        "2": [
+                            feat2.float(),
+                            intermediate_decoder_multi_view_feat[0].features[1].float(),
+                            intermediate_decoder_multi_view_feat[1].features[1].float(),
+                            final_decoder_multi_view_feat.features[1].float(),
+                        ],
+                    }
+                elif model.head_type == "linear":
+                    decoder_outputs = {
+                        "1": final_decoder_multi_view_feat.features[0].float(),
+                        "2": final_decoder_multi_view_feat.features[1].float(),
+                    }
+
+                # The prediction need precision, so we disable any autocasting here
+                with torch.autocast("cuda", enabled=False):
+                    # run the collected decoder features through the prediction heads
+                    if model.decoder_structure == "dual+single":
+                        # pass through head1 only and return the output
+                        execution_time, head_output1 = benchmark_torch_function_with_result(
+                            model._downstream_head, 1, decoder_outputs, shape1
+                        )
+
+                    elif self.decoder_structure in ["dual+dual", "dual+share"]:
+                        # pass through head1 and head2 and return the output
+                        execution_time_head_1, head_output1 = benchmark_torch_function_with_result(
+                            model._downstream_head, 1, decoder_outputs, shape1
+                        )
+                        execution_time_head_2, head_output2 = benchmark_torch_function_with_result(
+                            model._downstream_head, 2, decoder_outputs, shape1
+                        )
+                        execution_time = execution_time_head_1 + execution_time_head_2
+
+                print(
+                    f"\033[92mPrediction heads for batch size : {batch_size} completed in {execution_time:.3f} milliseconds\033[0m"
                 )
