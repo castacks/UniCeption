@@ -344,36 +344,22 @@ class DUSt3R(nn.Module):
         return res1, res2
 
 
-def get_parser():
-    "Argument parser for the script."
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--viz", action="store_true")
+def get_model_configurations_and_checkpoints():
+    """
+    Get different DUSt3R model configurations and paths to refactored checkpoints.
 
-    return parser
-
-
-if __name__ == "__main__":
-    # Parse arguments
-    parser = get_parser()
-    script_add_rerun_args(parser)  # Options: --addr
-    args = parser.parse_args()
-
-    # Set up Rerun for visualization
-    if args.viz:
-        rr.script_setup(args, f"UniCeption_DUSt3R_Inference")
-        rr.set_time_seconds("stable_time", 0)
-
-    # the reference data are collected under this setting.
-    # may use (False, "high") to test the relative error at TF32 precision
-    torch.backends.cuda.matmul.allow_tf32 = False
-    torch.set_float32_matmul_precision("highest")
+    Returns:
+        Tuple[List[str], dict]: A tuple containing the model configurations and paths to refactored checkpoints.
+    """
+    # Initialize model configurations
+    model_configurations = ["dust3r_224_linear", "dust3r_512_linear", "dust3r_512_dpt", "dust3r_512_dpt_mast3r"]
 
     # Get paths to pretrained checkpoints
     current_file_path = os.path.abspath(__file__)
     relative_checkpoint_path = os.path.join(os.path.dirname(current_file_path), "../../../checkpoints")
 
     # Initialize model configurations
-    MODEL_TO_CHECKPOINT_PATH = {
+    model_to_checkpoint_path = {
         "dust3r_512_dpt": {
             "encoder": f"{relative_checkpoint_path}/encoders/CroCo_Encoder_512_DUSt3R_dpt.pth",
             "info_sharing": f"{relative_checkpoint_path}/info_sharing/cross_attn_transformer/Two_View_Cross_Attention_Transformer_DUSt3R_512_dpt.pth",
@@ -421,6 +407,37 @@ if __name__ == "__main__":
             "ckpt_path": f"{relative_checkpoint_path}/examples/original_dust3r/DUSt3R_ViTLarge_BaseDecoder_224_linear.pth",
         },
     }
+    return model_configurations, model_to_checkpoint_path
+
+
+def get_parser():
+    "Argument parser for the script."
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--viz", action="store_true")
+
+    return parser
+
+
+if __name__ == "__main__":
+    # Parse arguments
+    parser = get_parser()
+    script_add_rerun_args(parser)  # Options: --addr
+    args = parser.parse_args()
+
+    # Set up Rerun for visualization
+    if args.viz:
+        rr.script_setup(args, f"UniCeption_DUSt3R_Inference")
+        rr.set_time_seconds("stable_time", 0)
+
+    # the reference data are collected under this setting.
+    # may use (False, "high") to test the relative error at TF32 precision
+    torch.backends.cuda.matmul.allow_tf32 = False
+    torch.set_float32_matmul_precision("highest")
+
+    # Get paths to pretrained checkpoints
+    current_file_path = os.path.abspath(__file__)
+    relative_checkpoint_path = os.path.join(os.path.dirname(current_file_path), "../../../checkpoints")
+    model_configurations, model_to_checkpoint_path = get_model_configurations_and_checkpoints()
 
     MODEL_TO_VERIFICATION_PATH = {
         "dust3r_512_dpt": {
@@ -457,8 +474,6 @@ if __name__ == "__main__":
         },
     }
 
-    model_configurations = ["dust3r_512_dpt", "dust3r_512_linear", "dust3r_224_linear", "dust3r_512_dpt_mast3r"]
-
     # Test different DUSt3R models using UniCeption modules
     for model_name in model_configurations:
         dust3r_model = DUSt3R(
@@ -466,11 +481,11 @@ if __name__ == "__main__":
             img_size=(512, 512) if "512" in model_name else (224, 224),
             patch_embed_cls="PatchEmbedDust3R",
             pred_head_type="linear" if "linear" in model_name else "dpt",
-            pretrained_checkpoint_path=MODEL_TO_CHECKPOINT_PATH[model_name]["ckpt_path"],
-            # pretrained_encoder_checkpoint_path=MODEL_TO_CHECKPOINT_PATH[model_name]["encoder"],
-            # pretrained_info_sharing_checkpoint_path=MODEL_TO_CHECKPOINT_PATH[model_name]["info_sharing"],
-            # pretrained_pred_head_checkpoint_paths=MODEL_TO_CHECKPOINT_PATH[model_name]["feature_head"],
-            # pretrained_pred_head_regressor_checkpoint_paths=MODEL_TO_CHECKPOINT_PATH[model_name]["regressor"],
+            pretrained_checkpoint_path=model_to_checkpoint_path[model_name]["ckpt_path"],
+            # pretrained_encoder_checkpoint_path=model_to_checkpoint_path[model_name]["encoder"],
+            # pretrained_info_sharing_checkpoint_path=model_to_checkpoint_path[model_name]["info_sharing"],
+            # pretrained_pred_head_checkpoint_paths=model_to_checkpoint_path[model_name]["feature_head"],
+            # pretrained_pred_head_regressor_checkpoint_paths=model_to_checkpoint_path[model_name]["regressor"],
             # override_encoder_checkpoint_attributes=True,
         )
         print("DUSt3R model initialized successfully!")
