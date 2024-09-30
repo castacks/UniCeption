@@ -5,6 +5,7 @@ Encoder Class for DINOv2
 from typing import List, Optional, Union
 
 import torch
+
 from uniception.models.encoders.base import UniCeptionViTEncoderBase, ViTEncoderInput, ViTEncoderOutput
 from uniception.models.utils.intermediate_feature_return import IntermediateFeatureReturner
 
@@ -73,7 +74,9 @@ class DINOv2Encoder(UniCeptionViTEncoderBase):
         print(f"Loading pretrained {DINO_MODELS[self.with_registers][self.version]} from torch hub")
         try:  # Requires internet access
             self.model = torch.hub.load(
-                "facebookresearch/dinov2", DINO_MODELS[self.with_registers][self.version], force_reload=torch_hub_force_reload
+                "facebookresearch/dinov2",
+                DINO_MODELS[self.with_registers][self.version],
+                force_reload=torch_hub_force_reload,
             )
         except:  # Load from cache
             self.model = torch.hub.load("facebookresearch/dinov2", DINO_MODELS[self.with_registers][self.version])

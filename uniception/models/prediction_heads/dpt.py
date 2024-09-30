@@ -13,6 +13,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from jaxtyping import Float
 from torch import Tensor
+
 from uniception.models.libs.croco.dpt_block import make_fusion_block, make_scratch, pair
 from uniception.models.prediction_heads.base import PixelTaskOutput, PredictionHeadLayeredInput
 
