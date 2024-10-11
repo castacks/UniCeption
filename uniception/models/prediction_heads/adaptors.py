@@ -90,7 +90,6 @@ class FlowAdaptor(UniCeptionAdaptorBase):
         output_shape = adaptor_input.output_shape_hw
 
         if not self.output_normalized_coordinate:
-
             x_scale, y_scale = self._get_xy_scale(output_shape)
 
             # scale the flow by stored mean, std and scaling factors

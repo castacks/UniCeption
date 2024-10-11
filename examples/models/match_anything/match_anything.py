@@ -55,7 +55,6 @@ def warp_image_with_flow(source_image, source_mask, target_image, flow):
 
 
 if __name__ == "__main__":
-
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     ###############################################################################

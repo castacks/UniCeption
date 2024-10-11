@@ -21,6 +21,7 @@ class DINOv2Encoder(UniCeptionViTEncoderBase):
         size: str = "large",
         with_registers: bool = False,
         pretrained_checkpoint_path: str = None,
+        torch_hub_force_reload: bool = False,
         *args,
         **kwargs,
     ):
@@ -31,9 +32,10 @@ class DINOv2Encoder(UniCeptionViTEncoderBase):
             name (str): Name of the encoder.
             data_norm_type (str): Image normalization type. Default: "dinov2"
             patch_size (int): Patch size for the encoder. Default: 14
-            size (str): Size variant of the DINOv2 model. Options: ["small", "base", "large", "giant"]
-            with_registers (bool): Whether to use the DINOv2 model with registers.
-            pretrained_checkpoint_path (str): Path to the pretrained checkpoint if using custom trained version of DINOv2.
+            size (str): Size variant of the DINOv2 model. Options: ["small", "base", "large", "giant"]. Default: "large"
+            with_registers (bool): Whether to use the DINOv2 model with registers. Default: False
+            pretrained_checkpoint_path (str): Path to the pretrained checkpoint if using custom trained version of DINOv2. Default: None
+            torch_hub_force_reload (bool): Whether to force reload the model from torch hub. Default: False
         """
         # Init the base class
         name = name if not with_registers else f"{name}_reg"
@@ -72,7 +74,9 @@ class DINOv2Encoder(UniCeptionViTEncoderBase):
         print(f"Loading pretrained {DINO_MODELS[self.with_registers][self.version]} from torch hub")
         try:  # Requires internet access
             self.model = torch.hub.load(
-                "facebookresearch/dinov2", DINO_MODELS[self.with_registers][self.version], force_reload=True
+                "facebookresearch/dinov2",
+                DINO_MODELS[self.with_registers][self.version],
+                force_reload=torch_hub_force_reload,
             )
         except:  # Load from cache
             self.model = torch.hub.load("facebookresearch/dinov2", DINO_MODELS[self.with_registers][self.version])

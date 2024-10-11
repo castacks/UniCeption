@@ -21,6 +21,7 @@ class RADIOEncoder(UniCeptionViTEncoderBase):
         model_version: str = "radio_v2.5-l",
         pretrained_checkpoint_path: str = None,
         eradio_input_shape: Optional[tuple] = None,
+        torch_hub_force_reload: bool = False,
         *args,
         **kwargs,
     ):
@@ -32,8 +33,9 @@ class RADIOEncoder(UniCeptionViTEncoderBase):
             data_norm_type (str): Image normalization type. Default: "radio"
             patch_size (int): Patch size for the encoder. Default: 16
             model_version (str): Version of the RADIO model to load. Default: "radio_v2.5-l"
-            pretrained_checkpoint_path (str): Path to the pretrained checkpoint if using custom trained version of RADIO.
+            pretrained_checkpoint_path (str): Path to the pretrained checkpoint if using custom trained version of RADIO. Default: None
             eradio_input_shape (tuple): Input shape (height, width) for E-RADIO models. Default: None
+            torch_hub_force_reload (bool): Whether to force reload the model from torch hub. Default: False
         """
         # Init the base class
         super().__init__(
@@ -57,7 +59,7 @@ class RADIOEncoder(UniCeptionViTEncoderBase):
                 version=self.model_version,
                 progress=True,
                 skip_validation=True,
-                force_reload=True,
+                force_reload=torch_hub_force_reload,
             )
         except:  # Load from cache
             self.model = torch.hub.load(
