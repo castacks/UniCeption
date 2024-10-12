@@ -19,7 +19,7 @@ IntermediateFeatureReturner
     └── ...(all adaptors)
 ```
 
-The diagram outlines how implemented classes are designed to interact with each other. 
+The diagram outlines how implemented classes are designed to interact with each other.
 
 ## Developer Guidelines
 

@@ -2,14 +2,14 @@ import argparse
 import os
 
 import torch
+from match_anything import MatchAnythingModel
+
 from uniception.models.info_sharing.cross_attention_transformer import (
     MultiViewCrossAttentionTransformer,
     MultiViewCrossAttentionTransformerIFR,
     MultiViewCrossAttentionTransformerInput,
 )
 from uniception.utils.profile import benchmark_torch_function, benchmark_torch_function_with_result
-
-from match_anything import MatchAnythingModel
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Profile the MatchAnything model")
@@ -97,13 +97,13 @@ if __name__ == "__main__":
                 # The prediction need precision, so we disable any autocasting here
                 with torch.autocast("cuda", enabled=False):
                     # run the collected decoder features through the prediction heads
-                    if model.decoder_structure == "dual+single":
+                    if model.info_sharing_and_head_structure == "dual+single":
                         # pass through head1 only and return the output
                         execution_time, head_output1 = benchmark_torch_function_with_result(
                             model._downstream_head, 1, decoder_outputs, shape1
                         )
 
-                    elif self.decoder_structure in ["dual+dual", "dual+share"]:
+                    elif self.info_sharing_and_head_structure in ["dual+dual", "dual+share"]:
                         # pass through head1 and head2 and return the output
                         execution_time_head_1, head_output1 = benchmark_torch_function_with_result(
                             model._downstream_head, 1, decoder_outputs, shape1

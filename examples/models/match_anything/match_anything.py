@@ -10,6 +10,7 @@ import numpy as np
 import torch
 from PIL import Image
 from torch.nn import functional as F
+
 from uniception.models.encoders.image_normalizations import IMAGE_NORMALIZATION_DICT
 from uniception.models.factory import MatchAnythingModel
 
@@ -54,7 +55,6 @@ def warp_image_with_flow(source_image, source_mask, target_image, flow):
 
 
 if __name__ == "__main__":
-
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     ###############################################################################
@@ -66,7 +66,7 @@ if __name__ == "__main__":
     current_file_path = os.path.abspath(__file__)
     relative_checkpoint_path = os.path.join(os.path.dirname(current_file_path), "../../../checkpoints")
     ma_224_dpt_ckpt_path = os.path.join(
-        relative_checkpoint_path, "examples", "match_anything", "ma_224_dpt_uniception.ckpt"
+        relative_checkpoint_path, "examples", "match_anything", "ma_224_dpt_uniception_1M.ckpt"
     )
 
     # equivalent to MatchAnythingModel(**ckpt["model_args"]).load_state_dict(ckpt["model"], strict=strict)

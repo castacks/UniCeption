@@ -15,6 +15,7 @@ from PIL import Image
 from uniception.models.factory import DUSt3R
 from uniception.utils.viz import script_add_rerun_args
 
+
 def get_model_configurations_and_checkpoints():
     """
     Get different DUSt3R model configurations and paths to refactored checkpoints.
