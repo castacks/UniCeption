@@ -62,11 +62,11 @@ if __name__ == "__main__":
                 # Pass the features through the decoder
                 decoder_input = MultiViewCrossAttentionTransformerInput(features=[feat1, feat2])
                 if model.head_type == "dpt":
-                    execution_time, decoder_output = benchmark_torch_function_with_result(model.decoder, decoder_input)
+                    execution_time, decoder_output = benchmark_torch_function_with_result(model.info_sharing, decoder_input)
                     final_decoder_multi_view_feat, intermediate_decoder_multi_view_feat = decoder_output
                 elif model.head_type == "linear":
                     execution_time, final_decoder_multi_view_feat = benchmark_torch_function_with_result(
-                        model.decoder, decoder_input
+                        model.info_sharing, decoder_input
                     )
                 print(
                     f"\033[92mDecoder for batch size : {batch_size} completed in {execution_time:.3f} milliseconds\033[0m"
@@ -103,7 +103,7 @@ if __name__ == "__main__":
                             model._downstream_head, 1, decoder_outputs, shape1
                         )
 
-                    elif self.info_sharing_and_head_structure in ["dual+dual", "dual+share"]:
+                    elif model.info_sharing_and_head_structure in ["dual+dual", "dual+share"]:
                         # pass through head1 and head2 and return the output
                         execution_time_head_1, head_output1 = benchmark_torch_function_with_result(
                             model._downstream_head, 1, decoder_outputs, shape1
