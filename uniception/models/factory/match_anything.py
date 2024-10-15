@@ -15,7 +15,12 @@ from uniception.models.info_sharing.cross_attention_transformer import (
     MultiViewCrossAttentionTransformerInput,
 )
 from uniception.models.libs.croco.pos_embed import RoPE2D
-from uniception.models.prediction_heads.adaptors import FlowWithConfidenceAdaptor, MaskAdaptor
+from uniception.models.prediction_heads.adaptors import (
+    Covariance2DAdaptor,
+    FlowAdaptor,
+    FlowWithConfidenceAdaptor,
+    MaskAdaptor,
+)
 from uniception.models.prediction_heads.base import AdaptorMap, PredictionHeadInput, PredictionHeadLayeredInput
 from uniception.models.prediction_heads.dpt import DPTFeature, DPTRegressionProcessor
 from uniception.models.prediction_heads.linear import LinearFeature
@@ -41,7 +46,12 @@ def interleave(tensor1, tensor2):
     return res1, res2
 
 
-CLASSNAME_TO_ADAPTOR_CLASS = {"FlowWithConfidenceAdaptor": FlowWithConfidenceAdaptor, "MaskAdaptor": MaskAdaptor}
+CLASSNAME_TO_ADAPTOR_CLASS = {
+    "FlowAdaptor": FlowAdaptor,
+    "FlowWithConfidenceAdaptor": FlowWithConfidenceAdaptor,
+    "Covariance2DAdaptor": Covariance2DAdaptor,
+    "MaskAdaptor": MaskAdaptor,
+}
 
 
 class MatchAnythingModel(nn.Module):
@@ -371,6 +381,29 @@ class MatchAnythingModel(nn.Module):
                 # pass through head1 only and return the output
                 head_output1 = self._downstream_head(1, info_sharing_outputs, shape1)
 
+                if "flow" in head_output1 and "flow_cov" in head_output1:
+                    # output is flow + covariance
+                    res1 = {
+                        "flow": head_output1["flow"].value,
+                        "flow_covariance": head_output1["flow_cov"].covariance,
+                        "flow_covariance_inv": head_output1["flow_cov"].inv_covariance,
+                        "flow_covariance_log_det": head_output1["flow_cov"].log_det,
+                        "non_occluded_fwd": head_output1["non_occluded_mask"],
+                    }
+
+                    return {
+                        "flow": {
+                            "flow_output": res1["flow"],
+                            "flow_covariance": res1["flow_covariance"],
+                            "flow_covariance_inv": res1["flow_covariance_inv"],
+                            "flow_covariance_log_det": res1["flow_covariance_log_det"],
+                        },
+                        "occlusion": {
+                            "mask": res1["non_occluded_fwd"].mask,
+                            "logits": res1["non_occluded_fwd"].logits,
+                        },
+                    }
+
                 res1 = {
                     "flow": head_output1["flow_with_confidence"].value,
                     "flow_conf": head_output1["flow_with_confidence"].confidence,
@@ -391,6 +424,9 @@ class MatchAnythingModel(nn.Module):
                 # pass through head1 and head2 and return the output
                 head_output1 = self._downstream_head(1, info_sharing_outputs, shape1)
                 head_output2 = self._downstream_head(2, info_sharing_outputs, shape1)
+
+                if "flow" in head_output1 and "flow_cov" in head_output1:
+                    raise NotImplementedError("Flow with covariance not implemented for dual+share or dual+dual")
 
                 res1 = {
                     "flow": head_output1["flow_with_confidence"].value,
