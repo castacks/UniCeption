@@ -55,6 +55,15 @@ class MaskAdaptorOutput:
 
 
 @dataclass
+class Covariance2DAdaptorOutput:
+    covariance: Float[Tensor, "batch_size 3 height width"]  # the 3 channels are s_x^2, s_y^2, and rho_xy
+    log_det: Float[Tensor, "batch_size 1 height width"]  # log determinant of the covariance matrix
+    inv_covariance: Float[
+        Tensor, "batch_size 3 height width"
+    ]  # the channels are [0,0], [1,1], and [0,1] of the inverse covariance matrix
+
+
+@dataclass
 class RegressionAdaptorOutput:
     value: Float[Tensor, "batch_size sliced_channels height width"]
 

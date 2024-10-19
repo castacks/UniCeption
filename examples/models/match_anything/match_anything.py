@@ -66,7 +66,7 @@ if __name__ == "__main__":
     current_file_path = os.path.abspath(__file__)
     relative_checkpoint_path = os.path.join(os.path.dirname(current_file_path), "../../../checkpoints")
     ma_224_dpt_ckpt_path = os.path.join(
-        relative_checkpoint_path, "examples", "match_anything", "ma_224_dpt_uniception.ckpt"
+        relative_checkpoint_path, "examples", "match_anything", "ma_224_dpt_uniception_1M.ckpt"
     )
 
     # equivalent to MatchAnythingModel(**ckpt["model_args"]).load_state_dict(ckpt["model"], strict=strict)

@@ -12,6 +12,7 @@ import torch.nn as nn
 
 from uniception.models.prediction_heads import (
     AdaptorInput,
+    Covariance2DAdaptorOutput,
     MaskAdaptorOutput,
     RegressionAdaptorOutput,
     RegressionWithConfidenceAdaptorOutput,
@@ -312,6 +313,44 @@ class ConfidenceAdaptor(UniCeptionAdaptorBase):
             confidence = confidence * (self.vmax - self.vmin) + self.vmin
 
             return RegressionAdaptorOutput(value=confidence)
+
+
+class Covariance2DAdaptor(UniCeptionAdaptorBase):
+    def __init__(
+        self,
+        name: str,
+        parametrization: str = "exp_tanh",
+        *args,
+        **kwargs,
+    ):
+        """
+        Adaptor for the Covariance2D head in UniCeption.
+        """
+        super().__init__(name, required_channels=3, *args, **kwargs)
+        self.parametrization = parametrization
+
+    def forward(self, adaptor_input: AdaptorInput):
+        x = adaptor_input.adaptor_feature
+
+        if self.parametrization == "exp_tanh":
+            c1, c2, s = torch.split(x, 1, dim=1)
+
+            diag_exponent = (c1 + c2) / 2
+            tanh_s = s.tanh()
+
+            cov = torch.cat([c1.exp(), c2.exp(), tanh_s * torch.exp(diag_exponent)], dim=1)
+
+            log_det = c1 + c2 + torch.log(1 - torch.square(tanh_s) + 1e-8)
+
+            inv_coeff = 1 / (1 - torch.square(tanh_s) + 1e-8)
+            inv_cov = inv_coeff * torch.cat(
+                [torch.exp(-c1), torch.exp(-c2), -tanh_s * torch.exp(-diag_exponent)], dim=1
+            )
+
+        else:
+            raise ValueError(f"Invalid parametrization: {self.parametrization}")
+
+        return Covariance2DAdaptorOutput(covariance=cov, log_det=log_det, inv_covariance=inv_cov)
 
 
 class MaskAdaptor(UniCeptionAdaptorBase):

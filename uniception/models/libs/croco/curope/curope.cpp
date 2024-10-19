@@ -1,4 +1,4 @@
-/* 
+/*
   Copyright (C) 2022-present Naver Corporation. All rights reserved.
   Licensed under CC BY-NC-SA 4.0 (non-commercial use only).
 */
@@ -21,7 +21,7 @@ void rope_2d_cpu( torch::Tensor tokens, const torch::Tensor positions, const flo
     for (int b = 0; b < B; b++) {
       for (int x = 0; x < 2; x++) { // y and then x (2d)
         for (int n = 0; n < N; n++) {
-        
+
             // grab the token position
             const int p = pos[b][n][x];
 
@@ -48,7 +48,7 @@ void rope_2d_cpu( torch::Tensor tokens, const torch::Tensor positions, const flo
 
 void rope_2d( torch::Tensor tokens,     // B,N,H,D
         const torch::Tensor positions,  // B,N,2
-        const float base, 
+        const float base,
         const float fwd )
 {
     TORCH_CHECK(tokens.dim() == 4, "tokens must have 4 dimensions");

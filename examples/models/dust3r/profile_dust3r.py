@@ -1,6 +1,7 @@
 import torch
-from dust3r import DUSt3R, get_model_configurations_and_checkpoints
+from dust3r import get_model_configurations_and_checkpoints
 
+from uniception.models.factory import DUSt3R
 from uniception.utils.profile import benchmark_torch_function
 
 if __name__ == "__main__":

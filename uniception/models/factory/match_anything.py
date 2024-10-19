@@ -15,7 +15,12 @@ from uniception.models.info_sharing.cross_attention_transformer import (
     MultiViewCrossAttentionTransformerInput,
 )
 from uniception.models.libs.croco.pos_embed import RoPE2D
-from uniception.models.prediction_heads.adaptors import FlowWithConfidenceAdaptor, MaskAdaptor
+from uniception.models.prediction_heads.adaptors import (
+    Covariance2DAdaptor,
+    FlowAdaptor,
+    FlowWithConfidenceAdaptor,
+    MaskAdaptor,
+)
 from uniception.models.prediction_heads.base import AdaptorMap, PredictionHeadInput, PredictionHeadLayeredInput
 from uniception.models.prediction_heads.dpt import DPTFeature, DPTRegressionProcessor
 from uniception.models.prediction_heads.linear import LinearFeature
@@ -41,7 +46,12 @@ def interleave(tensor1, tensor2):
     return res1, res2
 
 
-CLASSNAME_TO_ADAPTOR_CLASS = {"FlowWithConfidenceAdaptor": FlowWithConfidenceAdaptor, "MaskAdaptor": MaskAdaptor}
+CLASSNAME_TO_ADAPTOR_CLASS = {
+    "FlowAdaptor": FlowAdaptor,
+    "FlowWithConfidenceAdaptor": FlowWithConfidenceAdaptor,
+    "Covariance2DAdaptor": Covariance2DAdaptor,
+    "MaskAdaptor": MaskAdaptor,
+}
 
 
 class MatchAnythingModel(nn.Module):
@@ -55,8 +65,8 @@ class MatchAnythingModel(nn.Module):
         encoder_str: str,
         encoder_kwargs: Dict[str, Any] = {},
         img_size: Tuple[int, int] = (512, 512),
-        # Decoder structure configurations
-        decoder_structure: str = "dual+single",
+        # Info sharing & output head structure configurations
+        info_sharing_and_head_structure: str = "dual+single",
         # Information sharing configurations
         input_embed_dim: int = 1024,
         transformer_dim: int = 768,
@@ -68,8 +78,8 @@ class MatchAnythingModel(nn.Module):
         position_encoding: str = "RoPE100",
         normalize_intermediate: bool = True,
         returned_intermediate_layers: Optional[List[int]] = None,
-        decoder_kwargs: Dict[str, Any] = {},
-        decoder_checkpoint_path: Optional[str] = None,
+        info_sharing_kwargs: Dict[str, Any] = {},
+        info_sharing_checkpoint_path: Optional[str] = None,
         # Prediction Heads & Adaptors
         head_type: str = "dpt",
         feature_head_kwargs: Dict[str, Any] = {},
@@ -87,15 +97,15 @@ class MatchAnythingModel(nn.Module):
         - encoder_kwargs (Dict[str, Any]): Encoder configurations
         - img_size (Tuple[int, int]): Image size
 
-        - decoder_structure (str): Decoder structure configurations
-            - "share+share": two branch of the decoder share the same weights, and
-              the two decoder heads share the same weights.
-            - "dual+single": (default) two branch of the decoder have separate weights, and
-              only one decoder head is used. It will output forward predictions.
-            - "dual+dual": two branch of the decoder have separate weights, and
-              two separate decoder heads are used. It will output forward and backward predictions.
-            - "dual+share": two branch of the decoder have separate weights, and
-              the two decoder heads share the same weights. It will output forward and backward predictions.
+        - info_sharing_and_head_structure (str): Info Sharing & Head structure configurations
+            - "share+share": two branch of the info_sharing share the same weights, and
+              the two output heads share the same weights.
+            - "dual+single": (default) two branch of the info_sharing have separate weights, and
+              only one output head is used. It will output forward predictions.
+            - "dual+dual": two branch of the info_sharing have separate weights, and
+              two separate output heads are used. It will output forward and backward predictions.
+            - "dual+share": two branch of the info_sharing have separate weights, and
+              the two output heads share the same weights. It will output forward and backward predictions.
 
         - input_embed_dim (int): Input embedding dimension
         - transformer_dim (int): Transformer dimension
@@ -109,7 +119,7 @@ class MatchAnythingModel(nn.Module):
           to the returned intermediate features.
         - returned_intermediate_layers (Optional[List[int]]): When using DPT head, which
           layers to return intermediate features from.
-        - decoder_checkpoint_path (Optional[str]): Path to the decoder checkpoint
+        - info_sharing_checkpoint_path (Optional[str]): Path to the info_sharing checkpoint
 
         - head_type (str): Head type
             - "dpt": DPT head
@@ -126,7 +136,7 @@ class MatchAnythingModel(nn.Module):
         self.encoder_str = encoder_str
         self.encoder_kwargs = encoder_kwargs
         self.img_size = img_size
-        self.decoder_structure = decoder_structure
+        self.info_sharing_and_head_structure = info_sharing_and_head_structure
         self.input_embed_dim = input_embed_dim
         self.transformer_dim = transformer_dim
         self.num_heads = num_heads
@@ -137,9 +147,9 @@ class MatchAnythingModel(nn.Module):
         self.position_encoding = position_encoding
         self.normalize_intermediate = normalize_intermediate
         self.returned_intermediate_layers = returned_intermediate_layers
-        self.decoder_checkpoint_path = decoder_checkpoint_path
+        self.info_sharing_checkpoint_path = info_sharing_checkpoint_path
         self.head_type = head_type
-        self.decoder_kwargs = decoder_kwargs
+        self.info_sharing_kwargs = info_sharing_kwargs
         self.feature_head_kwargs = feature_head_kwargs
         self.adaptors_kwargs = adaptors_kwargs
         self.pretrained_checkpoint_path = pretrained_checkpoint_path
@@ -156,12 +166,12 @@ class MatchAnythingModel(nn.Module):
         else:
             raise ValueError(f"Position encoding method {position_encoding} not supported.")
 
-        self.decoder: nn.Module
+        self.info_sharing: nn.Module
 
-        if self.decoder_structure in ["dual+single", "dual+dual", "dual+share"]:
+        if self.info_sharing_and_head_structure in ["dual+single", "dual+dual", "dual+share"]:
             if head_type == "dpt":
-                self.decoder = MultiViewCrossAttentionTransformerIFR(
-                    name="decoder",
+                self.info_sharing = MultiViewCrossAttentionTransformerIFR(
+                    name="info_sharing",
                     input_embed_dim=self.input_embed_dim,
                     num_views=2,
                     depth=self.num_layers,
@@ -171,14 +181,14 @@ class MatchAnythingModel(nn.Module):
                     qkv_bias=self.qkv_bias,
                     qk_norm=self.qk_norm,
                     custom_positional_encoding=self.pos_enc,
-                    pretrained_checkpoint_path=self.decoder_checkpoint_path,
+                    pretrained_checkpoint_path=self.info_sharing_checkpoint_path,
                     indices=self.returned_intermediate_layers,
                     norm_intermediate=self.normalize_intermediate,
-                    **self.decoder_kwargs,
+                    **self.info_sharing_kwargs,
                 )
             elif head_type == "linear":
-                self.decoder = MultiViewCrossAttentionTransformer(
-                    name="decoder",
+                self.info_sharing = MultiViewCrossAttentionTransformer(
+                    name="info_sharing",
                     input_embed_dim=self.input_embed_dim,
                     num_views=2,
                     depth=self.num_layers,
@@ -188,30 +198,28 @@ class MatchAnythingModel(nn.Module):
                     qkv_bias=self.qkv_bias,
                     qk_norm=self.qk_norm,
                     custom_positional_encoding=self.pos_enc,
-                    pretrained_checkpoint_path=self.decoder_checkpoint_path,
-                    **self.decoder_kwargs,
+                    pretrained_checkpoint_path=self.info_sharing_checkpoint_path,
+                    **self.info_sharing_kwargs,
                 )
             else:
                 raise ValueError(f"Head type {head_type} not supported.")
         else:
-            raise ValueError(f"Decoder structure {decoder_structure} not supported.")
+            raise ValueError(f"Info Sharing structure {info_sharing_and_head_structure} not supported.")
 
         # initialize prediction heads and adaptors
-        if decoder_structure == "dual+single":
+        if info_sharing_and_head_structure == "dual+single":
             self.add_module("head1", self._initialize_prediction_heads(head_type, feature_head_kwargs, adaptors_kwargs))
-        elif decoder_structure == "dual+dual":
+        elif info_sharing_and_head_structure == "dual+dual":
             self.add_module("head1", self._initialize_prediction_heads(head_type, feature_head_kwargs, adaptors_kwargs))
             self.add_module("head2", self._initialize_prediction_heads(head_type, feature_head_kwargs, adaptors_kwargs))
-        elif decoder_structure == "dual+share":
+        elif info_sharing_and_head_structure == "dual+share":
             self.add_module("head1", self._initialize_prediction_heads(head_type, feature_head_kwargs, adaptors_kwargs))
             self.head2 = self.head1
 
     @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, strict=True, use_single_head=False, **kw):
+    def from_pretrained(cls, pretrained_model_name_or_path, strict=True, **kw):
         if os.path.isfile(pretrained_model_name_or_path):
-            ckpt = torch.load(pretrained_model_name_or_path, map_location="cpu", weights_only=False)
-            if use_single_head:
-                ckpt["model_args"]["decoder_structure"] = "dual+single"
+            ckpt = torch.load(pretrained_model_name_or_path, map_location="cpu")
             model = cls(**ckpt["model_args"])
             model.load_state_dict(ckpt["model"], strict=strict)
             return model
@@ -305,8 +313,8 @@ class MatchAnythingModel(nn.Module):
         """
         Forward pass of the Match-Anything Model
         1. Encodes two input images (view1 and view2) into feature embeddings
-        2. Passes the embeddings through the decoder
-        3. Passes the decoder output through the prediction heads and adaptors
+        2. Passes the embeddings through the info_sharing
+        3. Passes the info_sharing output through the prediction heads and adaptors
 
         Args:
         - view1 (Dict[str, Any]): Input view 1
@@ -335,41 +343,66 @@ class MatchAnythingModel(nn.Module):
         # Encode the two images --> Each feat output: BCHW features (batch_size, feature_dim, feature_height, feature_width)
         feat1, feat2 = self._encode_symmetrized(view1, view2)
 
-        # Pass the features through the decoder
-        decoder_input = MultiViewCrossAttentionTransformerInput(features=[feat1, feat2])
+        # Pass the features through the info_sharing
+        info_sharing_input = MultiViewCrossAttentionTransformerInput(features=[feat1, feat2])
         if self.head_type == "dpt":
-            final_decoder_multi_view_feat, intermediate_decoder_multi_view_feat = self.decoder(decoder_input)
+            final_info_sharing_multi_view_feat, intermediate_info_sharing_multi_view_feat = self.info_sharing(
+                info_sharing_input
+            )
         elif self.head_type == "linear":
-            final_decoder_multi_view_feat = self.decoder(decoder_input)
+            final_info_sharing_multi_view_feat = self.info_sharing(info_sharing_input)
 
-        # collect decoder features for the prediction heads
+        # collect info_sharing features for the prediction heads
         if self.head_type == "dpt":
-            decoder_outputs = {
+            info_sharing_outputs = {
                 "1": [
                     feat1.float(),
-                    intermediate_decoder_multi_view_feat[0].features[0].float(),
-                    intermediate_decoder_multi_view_feat[1].features[0].float(),
-                    final_decoder_multi_view_feat.features[0].float(),
+                    intermediate_info_sharing_multi_view_feat[0].features[0].float(),
+                    intermediate_info_sharing_multi_view_feat[1].features[0].float(),
+                    final_info_sharing_multi_view_feat.features[0].float(),
                 ],
                 "2": [
                     feat2.float(),
-                    intermediate_decoder_multi_view_feat[0].features[1].float(),
-                    intermediate_decoder_multi_view_feat[1].features[1].float(),
-                    final_decoder_multi_view_feat.features[1].float(),
+                    intermediate_info_sharing_multi_view_feat[0].features[1].float(),
+                    intermediate_info_sharing_multi_view_feat[1].features[1].float(),
+                    final_info_sharing_multi_view_feat.features[1].float(),
                 ],
             }
         elif self.head_type == "linear":
-            decoder_outputs = {
-                "1": final_decoder_multi_view_feat.features[0].float(),
-                "2": final_decoder_multi_view_feat.features[1].float(),
+            info_sharing_outputs = {
+                "1": final_info_sharing_multi_view_feat.features[0].float(),
+                "2": final_info_sharing_multi_view_feat.features[1].float(),
             }
 
         # The prediction need precision, so we disable any autocasting here
         with torch.autocast("cuda", enabled=False):
-            # run the collected decoder features through the prediction heads
-            if self.decoder_structure == "dual+single":
+            # run the collected info_sharing features through the prediction heads
+            if self.info_sharing_and_head_structure == "dual+single":
                 # pass through head1 only and return the output
-                head_output1 = self._downstream_head(1, decoder_outputs, shape1)
+                head_output1 = self._downstream_head(1, info_sharing_outputs, shape1)
+
+                if "flow" in head_output1 and "flow_cov" in head_output1:
+                    # output is flow + covariance
+                    res1 = {
+                        "flow": head_output1["flow"].value,
+                        "flow_covariance": head_output1["flow_cov"].covariance,
+                        "flow_covariance_inv": head_output1["flow_cov"].inv_covariance,
+                        "flow_covariance_log_det": head_output1["flow_cov"].log_det,
+                        "non_occluded_fwd": head_output1["non_occluded_mask"],
+                    }
+
+                    return {
+                        "flow": {
+                            "flow_output": res1["flow"],
+                            "flow_covariance": res1["flow_covariance"],
+                            "flow_covariance_inv": res1["flow_covariance_inv"],
+                            "flow_covariance_log_det": res1["flow_covariance_log_det"],
+                        },
+                        "occlusion": {
+                            "mask": res1["non_occluded_fwd"].mask,
+                            "logits": res1["non_occluded_fwd"].logits,
+                        },
+                    }
 
                 res1 = {
                     "flow": head_output1["flow_with_confidence"].value,
@@ -387,10 +420,13 @@ class MatchAnythingModel(nn.Module):
                         "logits": res1["non_occluded_fwd"].logits,
                     },
                 }
-            elif self.decoder_structure in ["dual+dual", "dual+share"]:
+            elif self.info_sharing_and_head_structure in ["dual+dual", "dual+share"]:
                 # pass through head1 and head2 and return the output
-                head_output1 = self._downstream_head(1, decoder_outputs, shape1)
-                head_output2 = self._downstream_head(2, decoder_outputs, shape1)
+                head_output1 = self._downstream_head(1, info_sharing_outputs, shape1)
+                head_output2 = self._downstream_head(2, info_sharing_outputs, shape1)
+
+                if "flow" in head_output1 and "flow_cov" in head_output1:
+                    raise NotImplementedError("Flow with covariance not implemented for dual+share or dual+dual")
 
                 res1 = {
                     "flow": head_output1["flow_with_confidence"].value,

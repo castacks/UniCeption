@@ -1,6 +1,6 @@
 # UniCeption
 
-A Generalizable Perception Stack for Scene Understanding. 
+A Generalizable Perception Stack for Scene Understanding.
 
 Please refer to the [Developer Guidelines](#developer-guidelines) for contributing to the project.
 
