@@ -2,7 +2,6 @@ import argparse
 import os
 
 import torch
-
 from uniception.models.factory import MatchAnythingModel
 from uniception.models.info_sharing.cross_attention_transformer import (
     MultiViewCrossAttentionTransformer,

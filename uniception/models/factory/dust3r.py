@@ -2,7 +2,6 @@ from typing import List, Tuple
 
 import torch
 import torch.nn as nn
-
 from uniception.models.encoders import ViTEncoderInput
 from uniception.models.encoders.croco import CroCoEncoder
 from uniception.models.encoders.image_normalizations import IMAGE_NORMALIZATION_DICT
