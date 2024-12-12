@@ -321,6 +321,8 @@ class RayDirectionsAdaptor(UniCeptionAdaptorBase):
         normalize_to_unit_image_plane: bool,
         vmin: float = -np.inf,
         vmax: float = np.inf,
+        clamp_min_of_z_dir: bool = False,
+        z_dir_min: float = 1,
         *args,
         **kwargs,
     ):
@@ -332,8 +334,10 @@ class RayDirectionsAdaptor(UniCeptionAdaptorBase):
             mode (str): Mode of the ray directions. Scales the directions accordingly. Currently only supports "linear".
             normalize_to_unit_sphere (bool): If True, will normalize the ray directions to unit vectors.
             normalize_to_unit_image_plane (bool): If True, will normalize the ray directions so that the z component is 1.
-            vmin (float): Minimum value of the ray directions after scaling & before any sort of normalization.
-            vmax (float): Maximum value of the ray directions after scaling & before any sort of normalization.
+            vmin (float): Minimum value of the ray directions after scaling & before any sort of normalization. (default: -inf)
+            vmax (float): Maximum value of the ray directions after scaling & before any sort of normalization. (default: inf)
+            clamp_min_of_z_dir (bool): If True, will clamp the z component of the ray directions before normalization. (default: False)
+            z_dir_min (float): If clamp_min_of_z_dir is True, this minimum value is used for clamping. (default: 1)
         """
         super().__init__(name, required_channels=3, *args, **kwargs)
 
@@ -342,6 +346,8 @@ class RayDirectionsAdaptor(UniCeptionAdaptorBase):
         self.normalize_to_unit_image_plane = normalize_to_unit_image_plane
         self.vmin = vmin
         self.vmax = vmax
+        self.clamp_min_of_z_dir = clamp_min_of_z_dir
+        self.z_dir_min = z_dir_min
 
         self.no_bounds = (vmin == -float("inf")) and (vmax == float("inf"))
 
@@ -364,6 +370,12 @@ class RayDirectionsAdaptor(UniCeptionAdaptorBase):
         if not self.no_bounds:
             output_ray_directions = output_ray_directions.clip(self.vmin, self.vmax)
 
+        if self.clamp_min_of_z_dir:
+            # Clamp the z component of ray directions
+            output_ray_directions_xy = output_ray_directions[:, :2]
+            clamped_output_ray_directions_z = torch.clamp(output_ray_directions[:, 2:3], min=self.z_dir_min)
+            output_ray_directions = torch.cat((output_ray_directions_xy, clamped_output_ray_directions_z), dim=1)
+
         if self.normalize_to_unit_sphere:
             # Normalize the ray directions to unit vectors
             output_ray_dirs_norm = output_ray_directions.norm(dim=1, keepdim=True).clip(min=1e-8)
@@ -371,7 +383,7 @@ class RayDirectionsAdaptor(UniCeptionAdaptorBase):
         elif self.normalize_to_unit_image_plane:
             # Normalize the ray directions so that the z component is 1
             output_ray_directions_z = output_ray_directions[:, 2:3]
-            output_ray_directions = output_ray_directions / (output_ray_directions_z + 1e-8)
+            output_ray_directions = output_ray_directions / output_ray_directions_z
 
         return RegressionAdaptorOutput(value=output_ray_directions)
 
@@ -441,6 +453,8 @@ class RayMapAdaptor(UniCeptionAdaptorBase):
         ray_directions_normalize_to_unit_image_plane: bool,
         ray_directions_vmin: float,
         ray_directions_vmax: float,
+        ray_directions_clamp_min_of_z_dir: bool,
+        ray_directions_z_dir_min: float,
         *args,
         **kwargs,
     ):
@@ -457,6 +471,8 @@ class RayMapAdaptor(UniCeptionAdaptorBase):
             ray_directions_normalize_to_unit_image_plane,
             ray_directions_vmin,
             ray_directions_vmax,
+            ray_directions_clamp_min_of_z_dir,
+            ray_directions_z_dir_min,
         )
 
     def forward(self, adaptor_input: AdaptorInput):
@@ -496,6 +512,8 @@ class RayMapPlusDepthAdaptor(UniCeptionAdaptorBase):
         ray_directions_normalize_to_unit_image_plane: bool,
         ray_directions_vmin: float,
         ray_directions_vmax: float,
+        ray_directions_clamp_min_of_z_dir: bool,
+        ray_directions_z_dir_min: float,
         # Depth adaptor
         depth_mode: str,
         depth_vmin: float,
@@ -516,6 +534,8 @@ class RayMapPlusDepthAdaptor(UniCeptionAdaptorBase):
             ray_directions_normalize_to_unit_image_plane,
             ray_directions_vmin,
             ray_directions_vmax,
+            ray_directions_clamp_min_of_z_dir,
+            ray_directions_z_dir_min,
         )
         self.depth_adaptor = DepthAdaptor(name, depth_mode, depth_vmin, depth_vmax)
 
@@ -558,6 +578,8 @@ class RayMapPlusDepthPlusQuatsAdaptor(UniCeptionAdaptorBase):
         ray_directions_normalize_to_unit_image_plane: bool,
         ray_directions_vmin: float,
         ray_directions_vmax: float,
+        ray_directions_clamp_min_of_z_dir: bool,
+        ray_directions_z_dir_min: float,
         # Depth adaptor
         depth_mode: str,
         depth_vmin: float,
@@ -583,6 +605,8 @@ class RayMapPlusDepthPlusQuatsAdaptor(UniCeptionAdaptorBase):
             ray_directions_normalize_to_unit_image_plane,
             ray_directions_vmin,
             ray_directions_vmax,
+            ray_directions_clamp_min_of_z_dir,
+            ray_directions_z_dir_min,
         )
         self.depth_adaptor = DepthAdaptor(name, depth_mode, depth_vmin, depth_vmax)
         self.quaternions_adaptor = QuaternionsAdaptor(
@@ -864,6 +888,8 @@ class RayMapPlusDepthwithConfidenceAdaptor(ValueWithConfidenceAdaptor):
         ray_directions_normalize_to_unit_image_plane: bool,
         ray_directions_vmin: float,
         ray_directions_vmax: float,
+        ray_directions_clamp_min_of_z_dir: bool,
+        ray_directions_z_dir_min: float,
         # Depth adaptor
         depth_mode: str,
         depth_vmin: float,
@@ -888,6 +914,8 @@ class RayMapPlusDepthwithConfidenceAdaptor(ValueWithConfidenceAdaptor):
             ray_directions_normalize_to_unit_image_plane=ray_directions_normalize_to_unit_image_plane,
             ray_directions_vmin=ray_directions_vmin,
             ray_directions_vmax=ray_directions_vmax,
+            ray_directions_clamp_min_of_z_dir=ray_directions_clamp_min_of_z_dir,
+            ray_directions_z_dir_min=ray_directions_z_dir_min,
             depth_mode=depth_mode,
             depth_vmin=depth_vmin,
             depth_vmax=depth_vmax,
@@ -915,6 +943,8 @@ class RayMapPlusDepthPlusQuatswithConfidenceAdaptor(ValueWithConfidenceAdaptor):
         ray_directions_normalize_to_unit_image_plane: bool,
         ray_directions_vmin: float,
         ray_directions_vmax: float,
+        ray_directions_clamp_min_of_z_dir: bool,
+        ray_directions_z_dir_min: float,
         # Depth adaptor
         depth_mode: str,
         depth_vmin: float,
@@ -944,6 +974,8 @@ class RayMapPlusDepthPlusQuatswithConfidenceAdaptor(ValueWithConfidenceAdaptor):
             ray_directions_normalize_to_unit_image_plane=ray_directions_normalize_to_unit_image_plane,
             ray_directions_vmin=ray_directions_vmin,
             ray_directions_vmax=ray_directions_vmax,
+            ray_directions_clamp_min_of_z_dir=ray_directions_clamp_min_of_z_dir,
+            ray_directions_z_dir_min=ray_directions_z_dir_min,
             depth_mode=depth_mode,
             depth_vmin=depth_vmin,
             depth_vmax=depth_vmax,
