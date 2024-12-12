@@ -54,7 +54,7 @@ class FlowAdaptor(UniCeptionAdaptorBase):
         flow_mean = list(flow_mean)
         flow_std = list(flow_std)
 
-        # handle the case where flow_mean and flow_std are passed as tuples
+        # Handle the case where flow_mean and flow_std are passed as tuples
         if isinstance(flow_mean, tuple) or isinstance(flow_mean, list):
             flow_mean = torch.tensor(flow_mean, dtype=torch.float32)
             assert flow_mean.shape == (2,), f"Flow mean must be a 2D tensor, got {flow_mean.shape}"
@@ -75,7 +75,7 @@ class FlowAdaptor(UniCeptionAdaptorBase):
         Forward pass for the FlowAdaptor.
 
         Args:
-            adaptor_input (AdaptorInput): Input to the adaptor.
+            adaptor_input (AdaptorInput): Input to the adaptor. (B x C x H x W)
 
         Returns:
             AdaptorOutput: Output of the adaptor.
@@ -83,7 +83,7 @@ class FlowAdaptor(UniCeptionAdaptorBase):
 
         x = adaptor_input.adaptor_feature
 
-        # check the number of channels to avoid passing BHWC features
+        # Check the number of channels to avoid passing BHWC features
         _, C, _, _ = x.shape
         assert C == 2, f"FlowAdaptor requires BCHW format with 2 channels, got {C} channels"
 
@@ -92,7 +92,7 @@ class FlowAdaptor(UniCeptionAdaptorBase):
         if not self.output_normalized_coordinate:
             x_scale, y_scale = self._get_xy_scale(output_shape)
 
-            # scale the flow by stored mean, std and scaling factors
+            # Scale the flow by stored mean, std and scaling factors
             flow_mean = self.flow_mean * torch.tensor([x_scale, y_scale], dtype=torch.float32, device=x.device).view(
                 1, 2, 1, 1
             )
@@ -100,10 +100,10 @@ class FlowAdaptor(UniCeptionAdaptorBase):
                 1, 2, 1, 1
             )
 
-            # unnormalize the flow
+            # Unnormalize the flow
             x = x * flow_std + flow_mean
         else:
-            # optionally subtract the coordinate bias
+            # Optionally subtract the coordinate bias
             wh_normalizer = torch.tensor(
                 adaptor_input.output_shape_hw[::-1], dtype=torch.float32, device=x.device
             ).view(1, 2, 1, 1)
@@ -168,6 +168,12 @@ class DepthAdaptor(UniCeptionAdaptorBase):
     def __init__(self, name: str, mode: str, vmin: float = -np.inf, vmax: float = np.inf, *args, **kwargs):
         """
         Adaptor for the Depth head in UniCeption.
+
+        Args:
+            name (str): Name of the adaptor.
+            mode (str): Mode of the depth, either "linear", "square" or "exp". Scales the depth accordingly.
+            vmin (float): Minimum value of the depth after scaling.
+            vmax (float): Maximum value of the depth after scaling.
         """
         super().__init__(name, required_channels=1, *args, **kwargs)
 
@@ -176,37 +182,30 @@ class DepthAdaptor(UniCeptionAdaptorBase):
         self.vmax = vmax
 
         self.no_bounds = (vmin == -float("inf")) and (vmax == float("inf"))
-        assert self.no_bounds
 
     def forward(self, adaptor_input: AdaptorInput):
         """
         Forward pass for the DepthAdaptor.
 
         Args:
-            adaptor_input (AdaptorInput): Input to the adaptor.
+            adaptor_input (AdaptorInput): Input to the adaptor. (B x C x H x W)
         Returns:
             AdaptorOutput: Output of the adaptor.
         """
         x = adaptor_input.adaptor_feature
-
-        # check the number of channels to avoid passing BHWC features
-        _, C, _, _ = x.shape
-        assert C == 1, f"DepthAdaptor requires BCHW format with 1 channels, got {C} channels"
-
         output_depth = None
 
         if self.mode == "linear":
-            if self.no_bounds:
-                output_depth = x
-            else:
-                output_depth = x.clip(self.vmin, self.vmax)
+            output_depth = x
         elif self.mode == "square":
-            if self.no_bounds:
-                output_depth = x**2
-            else:
-                output_depth = (x**2).clip(self.vmin, self.vmax)
+            output_depth = x**2
         elif self.mode == "exp":
-            output_depth = torch.expm1(x)
+            output_depth = torch.exp(x)
+        else:
+            raise ValueError(f"Invalid mode: {self.mode}")
+
+        if not self.no_bounds:
+            output_depth = output_depth.clip(self.vmin, self.vmax)
 
         return RegressionAdaptorOutput(value=output_depth)
 
@@ -214,7 +213,13 @@ class DepthAdaptor(UniCeptionAdaptorBase):
 class PointMapAdaptor(UniCeptionAdaptorBase):
     def __init__(self, name: str, mode: str, vmin: float = -np.inf, vmax: float = np.inf, *args, **kwargs):
         """
-        Adaptor for the Depth head in UniCeption.
+        Adaptor for the PointMap head in UniCeption.
+
+        Args:
+            name (str): Name of the adaptor.
+            mode (str): Mode of the point map, either "linear", "square" or "exp". Scales the distance of the points to the world origin accordingly.
+            vmin (float): Minimum value of the point map after scaling.
+            vmax (float): Maximum value of the point map after scaling.
         """
         super().__init__(name, required_channels=3, *args, **kwargs)
 
@@ -223,37 +228,404 @@ class PointMapAdaptor(UniCeptionAdaptorBase):
         self.vmax = vmax
 
         self.no_bounds = (vmin == -float("inf")) and (vmax == float("inf"))
-        assert self.no_bounds
 
     def forward(self, adaptor_input: AdaptorInput):
         """
         Forward pass for the PointMapAdaptor.
 
         Args:
-            adaptor_input (AdaptorInput): Input to the adaptor.
+            adaptor_input (AdaptorInput): Input to the adaptor. (B x C x H x W)
         Returns:
             AdaptorOutput: Output of the adaptor.
         """
         xyz = adaptor_input.adaptor_feature
-        mode, vmin, vmax = self.mode, self.vmin, self.vmax
+        output_xyz = None
 
-        no_bounds = (vmin == -float("inf")) and (vmax == float("inf"))
-        assert no_bounds
+        if self.mode != "linear":
+            # Compute distance to world origin
+            d = xyz.norm(dim=1, keepdim=True)
+            output_xyz = xyz / d.clip(min=1e-8)
+            # Scale the distance to world origin based on mode
+            if self.mode == "square":
+                output_xyz = output_xyz * d.square()
+            elif self.mode == "exp":
+                output_xyz = output_xyz * torch.expm1(d)
+            else:
+                raise ValueError(f"Invalid mode: {self.mode}")
+        else:
+            output_xyz = xyz
 
-        if mode == "linear":
-            if no_bounds:
-                return RegressionAdaptorOutput(value=xyz)  # [-inf, +inf]
-            return RegressionAdaptorOutput(value=xyz.clip(min=vmin, max=vmax))
+        if not self.no_bounds:
+            output_xyz = output_xyz.clip(self.vmin, self.vmax)
 
-        # distance to origin
-        d = xyz.norm(dim=1, keepdim=True)
-        xyz = xyz / d.clip(min=1e-8)
+        return RegressionAdaptorOutput(value=output_xyz)
 
-        if mode == "square":
-            return RegressionAdaptorOutput(value=xyz * d.square())
 
-        if mode == "exp":
-            return RegressionAdaptorOutput(value=xyz * torch.expm1(d))
+class RayOriginsAdaptor(UniCeptionAdaptorBase):
+    def __init__(self, name: str, mode: str, vmin: float = -np.inf, vmax: float = np.inf, *args, **kwargs):
+        """
+        Adaptor for the RayOrigins head in UniCeption.
+
+        Args:
+            name (str): Name of the adaptor.
+            mode (str): Mode of the ray origins, either "linear", "square" or "exp". Scales the distance of the ray origins to the world origin accordingly.
+            vmin (float): Minimum value of the ray origins after scaling.
+            vmax (float): Maximum value of the ray origins after scaling.
+        """
+        super().__init__(name, required_channels=3, *args, **kwargs)
+
+        self.mode = mode
+        self.vmin = vmin
+        self.vmax = vmax
+
+        self.no_bounds = (vmin == -float("inf")) and (vmax == float("inf"))
+
+    def forward(self, adaptor_input: AdaptorInput):
+        """
+        Forward pass for the RayOriginsAdaptor.
+
+        Args:
+            adaptor_input (AdaptorInput): Input to the adaptor. (B x C x H x W)
+        Returns:
+            AdaptorOutput: Output of the adaptor.
+        """
+        ray_origins = adaptor_input.adaptor_feature
+        output_ray_origins = None
+
+        if self.mode != "linear":
+            # Compute distance to world origin
+            d = ray_origins.norm(dim=1, keepdim=True)
+            output_ray_origins = ray_origins / d.clip(min=1e-8)
+            # Scale the distance to world origin based on mode
+            if self.mode == "square":
+                output_ray_origins = output_ray_origins * d.square()
+            elif self.mode == "exp":
+                output_ray_origins = output_ray_origins * torch.expm1(d)
+            else:
+                raise ValueError(f"Invalid mode: {self.mode}")
+        else:
+            output_ray_origins = ray_origins
+
+        if not self.no_bounds:
+            output_ray_origins = output_ray_origins.clip(self.vmin, self.vmax)
+
+        return RegressionAdaptorOutput(value=output_ray_origins)
+
+
+class RayDirectionsAdaptor(UniCeptionAdaptorBase):
+    def __init__(
+        self,
+        name: str,
+        mode: str,
+        normalize_to_unit_sphere: bool,
+        normalize_to_unit_image_plane: bool,
+        vmin: float = -np.inf,
+        vmax: float = np.inf,
+        *args,
+        **kwargs,
+    ):
+        """
+        Adaptor for the RayDirections head in UniCeption.
+
+        Args:
+            name (str): Name of the adaptor.
+            mode (str): Mode of the ray directions. Scales the directions accordingly. Currently only supports "linear".
+            normalize_to_unit_sphere (bool): If True, will normalize the ray directions to unit vectors.
+            normalize_to_unit_image_plane (bool): If True, will normalize the ray directions so that the z component is 1.
+            vmin (float): Minimum value of the ray directions after scaling & before any sort of normalization.
+            vmax (float): Maximum value of the ray directions after scaling & before any sort of normalization.
+        """
+        super().__init__(name, required_channels=3, *args, **kwargs)
+
+        self.mode = mode
+        self.normalize_to_unit_sphere = normalize_to_unit_sphere
+        self.normalize_to_unit_image_plane = normalize_to_unit_image_plane
+        self.vmin = vmin
+        self.vmax = vmax
+
+        self.no_bounds = (vmin == -float("inf")) and (vmax == float("inf"))
+
+    def forward(self, adaptor_input: AdaptorInput):
+        """
+        Forward pass for the RayDirectionsAdaptor.
+
+        Args:
+            adaptor_input (AdaptorInput): Input to the adaptor. (B x C x H x W)
+        Returns:
+            AdaptorOutput: Output of the adaptor.
+        """
+        ray_directions = adaptor_input.adaptor_feature
+
+        if self.mode == "linear":
+            output_ray_directions = ray_directions
+        else:
+            raise ValueError(f"Invalid mode: {self.mode}")
+
+        if not self.no_bounds:
+            output_ray_directions = output_ray_directions.clip(self.vmin, self.vmax)
+
+        if self.normalize_to_unit_sphere:
+            # Normalize the ray directions to unit vectors
+            output_ray_dirs_norm = output_ray_directions.norm(dim=1, keepdim=True).clip(min=1e-8)
+            output_ray_directions = output_ray_directions / output_ray_dirs_norm
+        elif self.normalize_to_unit_image_plane:
+            # Normalize the ray directions so that the z component is 1
+            output_ray_directions_z = output_ray_directions[:, 2:3]
+            output_ray_directions = output_ray_directions / (output_ray_directions_z + 1e-8)
+
+        return RegressionAdaptorOutput(value=output_ray_directions)
+
+
+class QuaternionsAdaptor(UniCeptionAdaptorBase):
+    def __init__(
+        self, name: str, mode: str, normalize: bool, vmin: float = -np.inf, vmax: float = np.inf, *args, **kwargs
+    ):
+        """
+        Adaptor for the Quaternions head in UniCeption.
+        Notation of the quaternions: (x, y, z, w)
+
+        Args:
+            name (str): Name of the adaptor.
+            mode (str): Mode of the quaternions. Scales the quaternions accordingly before normalization. Currently only supports "linear".
+            normalize (bool): If True, will normalize the quaternions to unit quaternions.
+            vmin (float): Minimum value of the quaternions after scaling & before normalization to unit quaternions if required.
+            vmax (float): Maximum value of the quaternions after scaling & before normalization to unit quaternions if required.
+        """
+        super().__init__(name, required_channels=4, *args, **kwargs)
+
+        self.mode = mode
+        self.normalize = normalize
+        self.vmin = vmin
+        self.vmax = vmax
+
+        self.no_bounds = (vmin == -float("inf")) and (vmax == float("inf"))
+
+    def forward(self, adaptor_input: AdaptorInput):
+        """
+        Forward pass for the QuaternionsAdaptor.
+
+        Args:
+            adaptor_input (AdaptorInput): Input to the adaptor. (B x C x H x W)
+        Returns:
+            AdaptorOutput: Output of the adaptor.
+        """
+        quaternions = adaptor_input.adaptor_feature
+
+        if self.mode == "linear":
+            output_quaternions = quaternions
+        else:
+            raise ValueError(f"Invalid mode: {self.mode}")
+
+        if not self.no_bounds:
+            output_quaternions = output_quaternions.clip(self.vmin, self.vmax)
+
+        if self.normalize:
+            # Normalize the quaternions to unit quaternions
+            output_quats_norm = output_quaternions.norm(dim=1, keepdim=True).clip(min=1e-8)
+            output_quaternions = output_quaternions / output_quats_norm
+
+        return RegressionAdaptorOutput(value=output_quaternions)
+
+
+class RayMapAdaptor(UniCeptionAdaptorBase):
+    def __init__(
+        self,
+        name: str,
+        # Ray origins adaptor
+        ray_origins_mode: str,
+        ray_origins_vmin: float,
+        ray_origins_vmax: float,
+        # Ray directions adaptor
+        ray_directions_mode: str,
+        ray_directions_normalize_to_unit_sphere: bool,
+        ray_directions_normalize_to_unit_image_plane: bool,
+        ray_directions_vmin: float,
+        ray_directions_vmax: float,
+        *args,
+        **kwargs,
+    ):
+        """
+        Adaptor for the RayMap (RayOrigins + RayDirections) head in UniCeption.
+        """
+        super().__init__(name, required_channels=6, *args, **kwargs)
+
+        self.ray_origins_adaptor = RayOriginsAdaptor(name, ray_origins_mode, ray_origins_vmin, ray_origins_vmax)
+        self.ray_directions_adaptor = RayDirectionsAdaptor(
+            name,
+            ray_directions_mode,
+            ray_directions_normalize_to_unit_sphere,
+            ray_directions_normalize_to_unit_image_plane,
+            ray_directions_vmin,
+            ray_directions_vmax,
+        )
+
+    def forward(self, adaptor_input: AdaptorInput):
+        """
+        Forward pass for the RayMapAdaptor.
+
+        Args:
+            adaptor_input (AdaptorInput): Input to the adaptor. (B x C x H x W)
+        Returns:
+            AdaptorOutput: Output of the adaptor.
+        """
+        ray_origins, ray_directions = torch.split(adaptor_input.adaptor_feature, 3, dim=1)
+        ray_origins_adaptor_input = AdaptorInput(
+            adaptor_feature=ray_origins, output_shape_hw=adaptor_input.output_shape_hw
+        )
+        ray_directions_adaptor_input = AdaptorInput(
+            adaptor_feature=ray_directions, output_shape_hw=adaptor_input.output_shape_hw
+        )
+        output_ray_origins = self.ray_origins_adaptor(ray_origins_adaptor_input)
+        output_ray_directions = self.ray_directions_adaptor(ray_directions_adaptor_input)
+        output_rays = torch.cat([output_ray_origins.value, output_ray_directions.value], dim=1)
+
+        return RegressionAdaptorOutput(value=output_rays)
+
+
+class RayMapPlusDepthAdaptor(UniCeptionAdaptorBase):
+    def __init__(
+        self,
+        name: str,
+        # Ray origins adaptor
+        ray_origins_mode: str,
+        ray_origins_vmin: float,
+        ray_origins_vmax: float,
+        # Ray directions adaptor
+        ray_directions_mode: str,
+        ray_directions_normalize_to_unit_sphere: bool,
+        ray_directions_normalize_to_unit_image_plane: bool,
+        ray_directions_vmin: float,
+        ray_directions_vmax: float,
+        # Depth adaptor
+        depth_mode: str,
+        depth_vmin: float,
+        depth_vmax: float,
+        *args,
+        **kwargs,
+    ):
+        """
+        Adaptor for the RayMap (RayOrigins + RayDirections) + Depth head in UniCeption.
+        """
+        super().__init__(name, required_channels=7, *args, **kwargs)
+
+        self.ray_origins_adaptor = RayOriginsAdaptor(name, ray_origins_mode, ray_origins_vmin, ray_origins_vmax)
+        self.ray_directions_adaptor = RayDirectionsAdaptor(
+            name,
+            ray_directions_mode,
+            ray_directions_normalize_to_unit_sphere,
+            ray_directions_normalize_to_unit_image_plane,
+            ray_directions_vmin,
+            ray_directions_vmax,
+        )
+        self.depth_adaptor = DepthAdaptor(name, depth_mode, depth_vmin, depth_vmax)
+
+    def forward(self, adaptor_input: AdaptorInput):
+        """
+        Forward pass for the RayMapPlusDepthAdaptor.
+
+        Args:
+            adaptor_input (AdaptorInput): Input to the adaptor. (B x C x H x W)
+        Returns:
+            AdaptorOutput: Output of the adaptor.
+        """
+        ray_origins, ray_directions, ray_depths = torch.split(adaptor_input.adaptor_feature, [3, 3, 1], dim=1)
+        ray_origins_adaptor_input = AdaptorInput(
+            adaptor_feature=ray_origins, output_shape_hw=adaptor_input.output_shape_hw
+        )
+        ray_directions_adaptor_input = AdaptorInput(
+            adaptor_feature=ray_directions, output_shape_hw=adaptor_input.output_shape_hw
+        )
+        depth_adaptor_input = AdaptorInput(adaptor_feature=ray_depths, output_shape_hw=adaptor_input.output_shape_hw)
+        output_ray_origins = self.ray_origins_adaptor(ray_origins_adaptor_input)
+        output_ray_directions = self.ray_directions_adaptor(ray_directions_adaptor_input)
+        output_depth = self.depth_adaptor(depth_adaptor_input)
+        output = torch.cat([output_ray_origins.value, output_ray_directions.value, output_depth.value], dim=1)
+
+        return RegressionAdaptorOutput(value=output)
+
+
+class RayMapPlusDepthPlusQuatsAdaptor(UniCeptionAdaptorBase):
+    def __init__(
+        self,
+        name: str,
+        # Ray origins adaptor
+        ray_origins_mode: str,
+        ray_origins_vmin: float,
+        ray_origins_vmax: float,
+        # Ray directions adaptor
+        ray_directions_mode: str,
+        ray_directions_normalize_to_unit_sphere: bool,
+        ray_directions_normalize_to_unit_image_plane: bool,
+        ray_directions_vmin: float,
+        ray_directions_vmax: float,
+        # Depth adaptor
+        depth_mode: str,
+        depth_vmin: float,
+        depth_vmax: float,
+        # Quaternions adaptor
+        quaternions_mode: str,
+        quaternion_normalize: bool,
+        quaternions_vmin: float,
+        quaternions_vmax: float,
+        *args,
+        **kwargs,
+    ):
+        """
+        Adaptor for the RayMap (RayOrigins + RayDirections) + Depth + Quaternions head in UniCeption.
+        """
+        super().__init__(name, required_channels=11, *args, **kwargs)
+
+        self.ray_origins_adaptor = RayOriginsAdaptor(name, ray_origins_mode, ray_origins_vmin, ray_origins_vmax)
+        self.ray_directions_adaptor = RayDirectionsAdaptor(
+            name,
+            ray_directions_mode,
+            ray_directions_normalize_to_unit_sphere,
+            ray_directions_normalize_to_unit_image_plane,
+            ray_directions_vmin,
+            ray_directions_vmax,
+        )
+        self.depth_adaptor = DepthAdaptor(name, depth_mode, depth_vmin, depth_vmax)
+        self.quaternions_adaptor = QuaternionsAdaptor(
+            name, quaternions_mode, quaternion_normalize, quaternions_vmin, quaternions_vmax
+        )
+
+    def forward(self, adaptor_input: AdaptorInput):
+        """
+        Forward pass for the RayMapPlusDepthPlusQuatsAdaptor.
+
+        Args:
+            adaptor_input (AdaptorInput): Input to the adaptor. (B x C x H x W)
+        Returns:
+            AdaptorOutput: Output of the adaptor.
+        """
+        ray_origins, ray_directions, ray_depths, ray_quaternions = torch.split(
+            adaptor_input.adaptor_feature, [3, 3, 1, 4], dim=1
+        )
+        ray_origins_adaptor_input = AdaptorInput(
+            adaptor_feature=ray_origins, output_shape_hw=adaptor_input.output_shape_hw
+        )
+        ray_directions_adaptor_input = AdaptorInput(
+            adaptor_feature=ray_directions, output_shape_hw=adaptor_input.output_shape_hw
+        )
+        depth_adaptor_input = AdaptorInput(adaptor_feature=ray_depths, output_shape_hw=adaptor_input.output_shape_hw)
+        quaternions_adaptor_input = AdaptorInput(
+            adaptor_feature=ray_quaternions, output_shape_hw=adaptor_input.output_shape_hw
+        )
+        output_ray_origins = self.ray_origins_adaptor(ray_origins_adaptor_input)
+        output_ray_directions = self.ray_directions_adaptor(ray_directions_adaptor_input)
+        output_ray_depths = self.depth_adaptor(depth_adaptor_input)
+        output_ray_quaternions = self.quaternions_adaptor(quaternions_adaptor_input)
+        output = torch.cat(
+            [
+                output_ray_origins.value,
+                output_ray_directions.value,
+                output_ray_depths.value,
+                output_ray_quaternions.value,
+            ],
+            dim=1,
+        )
+
+        return RegressionAdaptorOutput(value=output)
 
 
 class ConfidenceAdaptor(UniCeptionAdaptorBase):
@@ -294,7 +666,7 @@ class ConfidenceAdaptor(UniCeptionAdaptorBase):
         Forward pass for the ConfidenceAdaptor.
 
         Args:
-            adaptor_input (AdaptorInput): Input to the adaptor.
+            adaptor_input (AdaptorInput): Input to the adaptor. (B x C x H x W)
         Returns:
             AdaptorOutput: Output of the adaptor.
         """
@@ -420,13 +792,13 @@ class FlowWithConfidenceAdaptor(ValueWithConfidenceAdaptor):
     def __init__(
         self,
         name: str,
-        # flow adaptor
+        # Flow adaptor
         flow_mean: torch.Tensor,
         flow_std: torch.Tensor,
         base_shape: Tuple[int, int],
         scale_strategy: str,
         output_normalized_coordinate: bool,
-        # confidence adaptor
+        # Confidence adaptor
         confidence_type: str,
         vmin: float,
         vmax: float,
@@ -456,11 +828,11 @@ class PointMapWithConfidenceAdaptor(ValueWithConfidenceAdaptor):
     def __init__(
         self,
         name: str,
-        # pointmap adaptor
+        # Pointmap adaptor
         pointmap_mode: str,
         pointmap_vmin: float,
         pointmap_vmax: float,
-        # confidence adaptor
+        # Confidence adaptor
         confidence_type: str,
         confidence_vmin: float,
         confidence_vmax: float,
@@ -477,3 +849,118 @@ class PointMapWithConfidenceAdaptor(ValueWithConfidenceAdaptor):
         )
 
         super().__init__(name, value_adaptor=pointmap_adaptor, confidence_adaptor=confidence_adaptor, *args, **kwargs)
+
+
+class RayMapPlusDepthwithConfidenceAdaptor(ValueWithConfidenceAdaptor):
+    def __init__(
+        self,
+        name: str,
+        # RayMap adaptor
+        ray_origins_mode: str,
+        ray_origins_vmin: float,
+        ray_origins_vmax: float,
+        ray_directions_mode: str,
+        ray_directions_normalize_to_unit_sphere: bool,
+        ray_directions_normalize_to_unit_image_plane: bool,
+        ray_directions_vmin: float,
+        ray_directions_vmax: float,
+        # Depth adaptor
+        depth_mode: str,
+        depth_vmin: float,
+        depth_vmax: float,
+        # Confidence adaptor
+        confidence_type: str,
+        confidence_vmin: float,
+        confidence_vmax: float,
+        *args,
+        **kwargs,
+    ):
+        """
+        Adaptor for the RayMap (RayOrigins + RayDirections) + Depth with Confidence head in UniCeption.
+        """
+        raymap_plus_depth_adaptor = RayMapPlusDepthAdaptor(
+            name=f"{name}",
+            ray_origins_mode=ray_origins_mode,
+            ray_origins_vmin=ray_origins_vmin,
+            ray_origins_vmax=ray_origins_vmax,
+            ray_directions_mode=ray_directions_mode,
+            ray_directions_normalize_to_unit_sphere=ray_directions_normalize_to_unit_sphere,
+            ray_directions_normalize_to_unit_image_plane=ray_directions_normalize_to_unit_image_plane,
+            ray_directions_vmin=ray_directions_vmin,
+            ray_directions_vmax=ray_directions_vmax,
+            depth_mode=depth_mode,
+            depth_vmin=depth_vmin,
+            depth_vmax=depth_vmax,
+        )
+
+        confidence_adaptor = ConfidenceAdaptor(
+            name=f"{name}_confidence", confidence_type=confidence_type, vmin=confidence_vmin, vmax=confidence_vmax
+        )
+
+        super().__init__(
+            name, value_adaptor=raymap_plus_depth_adaptor, confidence_adaptor=confidence_adaptor, *args, **kwargs
+        )
+
+
+class RayMapPlusDepthPlusQuatswithConfidenceAdaptor(ValueWithConfidenceAdaptor):
+    def __init__(
+        self,
+        name: str,
+        # RayMap adaptor
+        ray_origins_mode: str,
+        ray_origins_vmin: float,
+        ray_origins_vmax: float,
+        ray_directions_mode: str,
+        ray_directions_normalize_to_unit_sphere: bool,
+        ray_directions_normalize_to_unit_image_plane: bool,
+        ray_directions_vmin: float,
+        ray_directions_vmax: float,
+        # Depth adaptor
+        depth_mode: str,
+        depth_vmin: float,
+        depth_vmax: float,
+        # Quaternions adaptor
+        quaternions_mode: str,
+        quaternion_normalize: bool,
+        quaternions_vmin: float,
+        quaternions_vmax: float,
+        # Confidence adaptor
+        confidence_type: str,
+        confidence_vmin: float,
+        confidence_vmax: float,
+        *args,
+        **kwargs,
+    ):
+        """
+        Adaptor for the RayMap (RayOrigins + RayDirections) + Depth + Quaternions with Confidence head in UniCeption.
+        """
+        raymap_plus_depth_plus_quats_adaptor = RayMapPlusDepthPlusQuatsAdaptor(
+            name=f"{name}",
+            ray_origins_mode=ray_origins_mode,
+            ray_origins_vmin=ray_origins_vmin,
+            ray_origins_vmax=ray_origins_vmax,
+            ray_directions_mode=ray_directions_mode,
+            ray_directions_normalize_to_unit_sphere=ray_directions_normalize_to_unit_sphere,
+            ray_directions_normalize_to_unit_image_plane=ray_directions_normalize_to_unit_image_plane,
+            ray_directions_vmin=ray_directions_vmin,
+            ray_directions_vmax=ray_directions_vmax,
+            depth_mode=depth_mode,
+            depth_vmin=depth_vmin,
+            depth_vmax=depth_vmax,
+            quaternions_mode=quaternions_mode,
+            quaternion_normalize=quaternion_normalize,
+            quaternions_vmin=quaternions_vmin,
+            quaternions_vmax=quaternions_vmax,
+        )
+
+        confidence_adaptor = ConfidenceAdaptor(
+            name=f"{name}_confidence", confidence_type=confidence_type, vmin=confidence_vmin, vmax=confidence_vmax
+        )
+
+        super().__init__(
+            name,
+            value_adaptor=raymap_plus_depth_plus_quats_adaptor,
+            confidence_adaptor=confidence_adaptor,
+            *args,
+            **kwargs,
+        )
