@@ -53,7 +53,6 @@ CLASSNAME_TO_ADAPTOR_CLASS = {
     "MaskAdaptor": MaskAdaptor,
 }
 
-
 class MatchAnythingModel(nn.Module):
     """
     Match-Anything Model from Uniception Library
@@ -209,6 +208,7 @@ class MatchAnythingModel(nn.Module):
         # initialize prediction heads and adaptors
         if info_sharing_and_head_structure == "dual+single":
             self.add_module("head1", self._initialize_prediction_heads(head_type, feature_head_kwargs, adaptors_kwargs))
+            self.info_sharing.multi_view_branches[1][-1].requires_grad_(False) # disable gradients in the alternate branch to enable ddp
         elif info_sharing_and_head_structure == "dual+dual":
             self.add_module("head1", self._initialize_prediction_heads(head_type, feature_head_kwargs, adaptors_kwargs))
             self.add_module("head2", self._initialize_prediction_heads(head_type, feature_head_kwargs, adaptors_kwargs))
@@ -285,7 +285,8 @@ class MatchAnythingModel(nn.Module):
             out2 = out2.features
 
         return out, out2
-
+    
+    @torch.compiler.disable(recursive=False)
     def _encode_symmetrized(self, view1, view2):
         "Encode image pairs accounting for symmetrization, i.e., (a, b) and (b, a) always exist in the input"
         img1 = view1["img"]
@@ -375,11 +376,45 @@ class MatchAnythingModel(nn.Module):
             }
 
         # The prediction need precision, so we disable any autocasting here
-        with torch.autocast("cuda", enabled=False):
+        with torch.autocast("cuda", enabled=False): # 
             # run the collected info_sharing features through the prediction heads
             if self.info_sharing_and_head_structure == "dual+single":
                 # pass through head1 only and return the output
                 head_output1 = self._downstream_head(1, info_sharing_outputs, shape1)
+
+                if "flow_with_confidence" in head_output1 and "flow_cov" in head_output1:
+                    # output is flow + confidence + covariance
+                    res1 = {
+                        "flow": head_output1["flow_with_confidence"].value,
+                        "flow_conf": head_output1["flow_with_confidence"].confidence,
+                        "flow_covariance": head_output1["flow_cov"].covariance,
+                        "flow_covariance_inv": head_output1["flow_cov"].inv_covariance,
+                        "flow_covariance_log_det": head_output1["flow_cov"].log_det,
+                        "non_occluded_fwd": head_output1["non_occluded_mask"],
+                    }
+
+                    return {
+                        "flow": {
+                            "flow_output": res1["flow"],
+                            "flow_output_conf": res1["flow_conf"],
+                            "flow_covariance": res1["flow_covariance"],
+                            "flow_covariance_inv": res1["flow_covariance_inv"],
+                            "flow_covariance_log_det": res1["flow_covariance_log_det"],
+                        },
+                        "occlusion": {
+                            "mask": res1["non_occluded_fwd"].mask,
+                            "logits": res1["non_occluded_fwd"].logits,
+                        },
+                    }
+
+                if "flow" in head_output1 and ("non_occluded_mask" not in head_output1):
+                    # output is flow only
+                    return {
+                        "flow": {
+                            "flow_output": head_output1["flow"].value,
+                        },
+                    }
+
 
                 if "flow" in head_output1 and "flow_cov" in head_output1:
                     # output is flow + covariance
