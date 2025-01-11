@@ -180,16 +180,17 @@ class CosmosFeature(nn.Module):
 
         x_split = list(torch.split(x, COSMOS_LATENT_CHANNELS, dim=1))
 
+        output = [None] * self.output_dim
         for i, decoder in enumerate(self.cosmos_decoders):
-            x_split[i] = torch.mean(decoder(x_split[i]), dim=1, keepdim=True)
+            output[i] = torch.mean(decoder(x_split[i]), dim=1, keepdim=True)
 
         # Concatenate the decoded channels
-        x = torch.cat(x_split, dim=1)
+        x = torch.cat(output, dim=1)
 
         # a linear scaling layer to map cosmos output [-1, 1] to arbitrary range
         x = x * self.output_scaling + self.output_bias
 
-        return PixelTaskOutput(decoded_channels=x)
+        return PixelTaskOutput(decoded_channels=x), x_split
 
 
 if __name__ == "__main__":
