@@ -11,6 +11,7 @@ from uniception.models.encoders.base import (
     ViTEncoderInput,
     ViTEncoderOutput,
 )
+from uniception.models.encoders.cosmos import CosmosEncoder
 from uniception.models.encoders.croco import CroCoEncoder
 from uniception.models.encoders.dinov2 import DINOv2Encoder
 from uniception.models.encoders.radio import RADIOEncoder
@@ -28,6 +29,10 @@ ENCODER_CONFIGS = {
     "radio": {
         "class": RADIOEncoder,
         "supported_models": ["RADIO", "E-RADIO"],
+    },
+    "cosmos": {
+        "class": CosmosEncoder,
+        "supported_models": ["Cosmos-Tokenizer CI8x8", "Cosmos-Tokenizer CI16x16"],
     },
     # Add other encoders here
 }
@@ -148,6 +153,13 @@ def _make_encoder_test(encoder_str: str, **kwargs) -> UniCeptionEncoderBase:
             name=encoder_str,
             model_version=encoder_str,
             eradio_input_shape=eradio_input_shape,
+        )
+    elif "cosmos" in encoder_str:
+        patch_size = int(encoder_str.split("x")[-1])
+        return CosmosEncoder(
+            name=encoder_str,
+            patch_size=patch_size,
+            pretrained_checkpoint_path=f"{relative_checkpoint_path}/Cosmos-Tokenizer-CI{patch_size}x{patch_size}/encoder.pth",
         )
     else:
         raise ValueError(f"Unknown encoder: {encoder_str}")

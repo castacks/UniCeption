@@ -931,10 +931,10 @@ if __name__ == "__main__":
 
     # Init DiffSelfAttentionBlock & DiffCrossAttentionBlock
     diff_self_attn_block = DiffSelfAttentionBlock(
-        dim=768, depth=0, num_heads=16, custom_positional_encoding=dummy_positional_encoding
+        dim=768, depth=0, num_heads=8, custom_positional_encoding=dummy_positional_encoding
     )
     diff_cross_attn_block = DiffCrossAttentionBlock(
-        dim=768, depth=0, num_heads=16, custom_positional_encoding=dummy_positional_encoding
+        dim=768, depth=0, num_heads=8, custom_positional_encoding=dummy_positional_encoding
     )
 
     # Perform dummy inference with the DiffAttention blocks
