@@ -13,9 +13,16 @@ import torch.nn.functional as F
 from uniception.models.libs.cosmos_tokenizer.modules import DecoderType
 from uniception.models.libs.cosmos_tokenizer.networks import TokenizerConfigs
 from uniception.models.prediction_heads.base import PixelTaskOutput, PredictionHeadInput
+from uniception.models.prediction_heads.adaptors import FlowAdaptor, FlowWithConfidenceAdaptor, Covariance2DAdaptor, MaskAdaptor
 
 COSMOS_LATENT_CHANNELS = 16
 
+CLASSNAME_TO_ADAPTOR_CLASS = {
+    "FlowAdaptor": FlowAdaptor,
+    "FlowWithConfidenceAdaptor": FlowWithConfidenceAdaptor,
+    "Covariance2DAdaptor": Covariance2DAdaptor,
+    "MaskAdaptor": MaskAdaptor,
+}
 
 class CosmosSingleChannel(nn.Module):
     """
@@ -183,6 +190,7 @@ class CosmosFeature(nn.Module):
         x = x * self.output_scaling + self.output_bias
 
         return PixelTaskOutput(decoded_channels=x)
+
 
 if __name__ == "__main__":
 
