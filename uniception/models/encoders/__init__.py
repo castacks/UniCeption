@@ -12,22 +12,25 @@ from uniception.models.encoders.base import (
     ViTEncoderOutput,
 )
 from uniception.models.encoders.cosmos import CosmosEncoder
-from uniception.models.encoders.croco import CroCoEncoder
-from uniception.models.encoders.dinov2 import DINOv2Encoder
-from uniception.models.encoders.radio import RADIOEncoder
+from uniception.models.encoders.croco import CroCoEncoder, CroCoIntermediateFeatureReturner
+from uniception.models.encoders.dinov2 import DINOv2Encoder, DINOv2IntermediateFeatureReturner
+from uniception.models.encoders.radio import RADIOEncoder, RADIOIntermediateFeatureReturner
 
 # Define encoder configurations
 ENCODER_CONFIGS = {
     "croco": {
         "class": CroCoEncoder,
+        "intermediate_feature_returner_class": CroCoIntermediateFeatureReturner,
         "supported_models": ["CroCov2", "DUSt3R", "MASt3R"],
     },
     "dinov2": {
         "class": DINOv2Encoder,
+        "intermediate_feature_returner_class": DINOv2IntermediateFeatureReturner,
         "supported_models": ["DINOv2", "DINOv2-Registers", "DINOv2-Depth-Anythingv2"],
     },
     "radio": {
         "class": RADIOEncoder,
+        "intermediate_feature_returner_class": RADIOIntermediateFeatureReturner,
         "supported_models": ["RADIO", "E-RADIO"],
     },
     "cosmos": {
@@ -57,6 +60,29 @@ def encoder_factory(encoder_str: str, **kwargs) -> UniCeptionEncoderBase:
 
     encoder_config = ENCODER_CONFIGS[encoder_str]
     encoder_class = encoder_config["class"]
+
+    return encoder_class(**kwargs)
+
+
+def feature_returner_encoder_factory(encoder_str: str, **kwargs) -> UniCeptionEncoderBase:
+    """
+    Encoder factory for UniCeption.
+    Please use python3 -m uniception.models.encoders.list to see available encoders.
+
+    Args:
+        encoder_str (str): Name of the encoder to create.
+        **kwargs: Additional keyword arguments to pass to the encoder constructor.
+
+    Returns:
+        UniCeptionEncoderBase: An instance of the specified encoder.
+    """
+    if encoder_str not in ENCODER_CONFIGS:
+        raise ValueError(
+            f"Unknown encoder: {encoder_str}. For valid encoder_str options, please use python3 -m uniception.models.encoders.list"
+        )
+
+    encoder_config = ENCODER_CONFIGS[encoder_str]
+    encoder_class = encoder_config["intermediate_feature_returner_class"]
 
     return encoder_class(**kwargs)
 

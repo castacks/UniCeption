@@ -189,6 +189,9 @@ class DINOv2IntermediateFeatureReturner(DINOv2Encoder, IntermediateFeatureReturn
             height % self.patch_size == 0 and width % self.patch_size == 0
         ), f"Input shape must be divisible by patch size: {self.patch_size}"
 
+        if self.indices is None:
+            self.indices = range(len(self.model.blocks))
+
         # Extract the intermediate features from the DINOv2 model
         intermediate_features = self.model.get_intermediate_layers(
             encoder_input.image, n=self.indices, reshape=True, norm=self.norm_intermediate
