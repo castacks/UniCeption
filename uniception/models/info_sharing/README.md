@@ -6,6 +6,10 @@
 
 - `MultiViewCrossAttentionTransformer`
    - `MultiViewCrossAttentionTransformerIFR`
+- `MultiViewGlobalAttentionTransformer`
+   - `MultiViewGlobalAttentionTransformerIFR`
+- `MultiViewAlternatingAttentionTransformer`
+   - `MultiViewAlternatingAttentionTransformerIFR`
 
 ## Developer Guidelines
 
