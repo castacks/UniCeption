@@ -3,10 +3,10 @@ import os
 
 import torch
 from uniception.models.factory import MatchAnythingModel
+from uniception.models.info_sharing.base import MultiViewTransformerInput
 from uniception.models.info_sharing.cross_attention_transformer import (
     MultiViewCrossAttentionTransformer,
     MultiViewCrossAttentionTransformerIFR,
-    MultiViewCrossAttentionTransformerInput,
 )
 from uniception.utils.profile import benchmark_torch_function, benchmark_torch_function_with_result
 
@@ -59,7 +59,7 @@ if __name__ == "__main__":
                 )
 
                 # Pass the features through the decoder
-                decoder_input = MultiViewCrossAttentionTransformerInput(features=[feat1, feat2])
+                decoder_input = MultiViewTransformerInput(features=[feat1, feat2])
                 if model.head_type == "dpt":
                     execution_time, decoder_output = benchmark_torch_function_with_result(
                         model.info_sharing, decoder_input

@@ -5,10 +5,10 @@ import torch.nn as nn
 from uniception.models.encoders import ViTEncoderInput
 from uniception.models.encoders.croco import CroCoEncoder
 from uniception.models.encoders.image_normalizations import IMAGE_NORMALIZATION_DICT
+from uniception.models.info_sharing.base import MultiViewTransformerInput
 from uniception.models.info_sharing.cross_attention_transformer import (
     MultiViewCrossAttentionTransformer,
     MultiViewCrossAttentionTransformerIFR,
-    MultiViewCrossAttentionTransformerInput,
 )
 from uniception.models.libs.croco.pos_embed import RoPE2D, get_2d_sincos_pos_embed
 from uniception.models.prediction_heads.adaptors import PointMapWithConfidenceAdaptor
@@ -273,7 +273,7 @@ class DUSt3R(nn.Module):
         feat1, feat2 = self._encode_symmetrized(view1, view2)
 
         # Combine all images into view-centric representation
-        info_sharing_input = MultiViewCrossAttentionTransformerInput(features=[feat1, feat2])
+        info_sharing_input = MultiViewTransformerInput(features=[feat1, feat2])
         if self.pred_head_type == "linear":
             final_info_sharing_multi_view_feat = self.info_sharing(info_sharing_input)
         elif self.pred_head_type == "dpt":

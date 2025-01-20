@@ -8,10 +8,10 @@ from typing import Any, Dict, List, Optional, Tuple
 import torch
 from torch import nn
 from uniception.models.encoders import ViTEncoderInput, encoder_factory
+from uniception.models.info_sharing.base import MultiViewTransformerInput
 from uniception.models.info_sharing.cross_attention_transformer import (
     MultiViewCrossAttentionTransformer,
     MultiViewCrossAttentionTransformerIFR,
-    MultiViewCrossAttentionTransformerInput,
 )
 from uniception.models.libs.croco.pos_embed import RoPE2D
 from uniception.models.prediction_heads.adaptors import (
@@ -343,7 +343,7 @@ class MatchAnythingModel(nn.Module):
         feat1, feat2 = self._encode_symmetrized(view1, view2)
 
         # Pass the features through the info_sharing
-        info_sharing_input = MultiViewCrossAttentionTransformerInput(features=[feat1, feat2])
+        info_sharing_input = MultiViewTransformerInput(features=[feat1, feat2])
         if self.head_type == "dpt":
             final_info_sharing_multi_view_feat, intermediate_info_sharing_multi_view_feat = self.info_sharing(
                 info_sharing_input

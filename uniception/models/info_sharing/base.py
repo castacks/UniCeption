@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 import torch.nn as nn
+from jaxtyping import Float
+from torch import Tensor
 
 
 @dataclass
@@ -62,6 +64,24 @@ class IntermediateFeatureReturner:
         self.total_num_layers: int = total_num_layers
         self.selected_layers: List[int] = selected_layers
         self.num_intermediate_layers: int = len(selected_layers)
+
+
+@dataclass
+class MultiViewTransformerInput(InfoSharingInput):
+    """
+    Input class for Multi-View Transformer.
+    """
+
+    features: List[Float[Tensor, "batch input_embed_dim feat_height feat_width"]]
+
+
+@dataclass
+class MultiViewTransformerOutput(InfoSharingOutput):
+    """
+    Output class for Multi-View Transformer.
+    """
+
+    features: List[Float[Tensor, "batch transformer_embed_dim feat_height feat_width"]]
 
 
 if __name__ == "__main__":

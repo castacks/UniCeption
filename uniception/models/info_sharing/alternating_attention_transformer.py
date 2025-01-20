@@ -12,30 +12,14 @@ import torch
 import torch.nn as nn
 from jaxtyping import Float
 from torch import Tensor
-from uniception.models.info_sharing.base import InfoSharingInput, InfoSharingOutput, UniCeptionInfoSharingBase
+from uniception.models.info_sharing.base import (
+    UniCeptionInfoSharingBase,
+    MultiViewTransformerInput,
+    MultiViewTransformerOutput,
+)
 from uniception.models.utils.intermediate_feature_return import IntermediateFeatureReturner, feature_take_indices
 from uniception.models.utils.positional_encoding import PositionGetter
 from uniception.models.utils.transformer_blocks import Mlp, SelfAttentionBlock
-
-
-@dataclass
-class MultiViewAlternatingAttentionTransformerInput(InfoSharingInput):
-    """
-    Input class for Multi-View Alternating-Attention Transformer.
-    List of view/image features, each of shape (batch, input_embed_dim, height, width)
-    """
-
-    features: List[Float[Tensor, "batch input_embed_dim feat_height feat_width"]]
-
-
-@dataclass
-class MultiViewAlternatingAttentionTransformerOutput(InfoSharingOutput):
-    """
-    Output class for Multi-View Alternating-Attention Transformer.
-    List of view/image features, each of shape (batch, transformer_embed_dim, height, width)
-    """
-
-    features: List[Float[Tensor, "batch transformer_embed_dim feat_height feat_width"]]
 
 
 class MultiViewAlternatingAttentionTransformer(UniCeptionInfoSharingBase):
@@ -196,18 +180,18 @@ class MultiViewAlternatingAttentionTransformer(UniCeptionInfoSharingBase):
 
     def forward(
         self,
-        model_input: MultiViewAlternatingAttentionTransformerInput,
-    ) -> MultiViewAlternatingAttentionTransformerOutput:
+        model_input: MultiViewTransformerInput,
+    ) -> MultiViewTransformerOutput:
         """
         Forward interface for the Multi-View Alternating-Attention Transformer.
 
         Args:
-            model_input (MultiViewAlternatingAttentionTransformerInput): Input to the model.
+            model_input (MultiViewTransformerInput): Input to the model.
                 Expects the features to be a list of size (batch, input_embed_dim, height, width),
                 where each entry corresponds to a different view.
 
         Returns:
-            MultiViewAlternatingAttentionTransformerOutput: Output of the model post information sharing.
+            MultiViewTransformerOutput: Output of the model post information sharing.
         """
         # Check that the number of views matches the input and the features are of expected shape
         assert (
@@ -314,7 +298,7 @@ class MultiViewAlternatingAttentionTransformer(UniCeptionInfoSharingBase):
         ]
 
         # Return the output multi-view features
-        return MultiViewAlternatingAttentionTransformerOutput(features=output_multi_view_features)
+        return MultiViewTransformerOutput(features=output_multi_view_features)
 
 
 class MultiViewAlternatingAttentionTransformerIFR(
@@ -416,21 +400,21 @@ class MultiViewAlternatingAttentionTransformerIFR(
 
     def forward(
         self,
-        model_input: MultiViewAlternatingAttentionTransformerInput,
+        model_input: MultiViewTransformerInput,
     ) -> Union[
-        List[MultiViewAlternatingAttentionTransformerOutput],
-        Tuple[MultiViewAlternatingAttentionTransformerOutput, List[MultiViewAlternatingAttentionTransformerOutput]],
+        List[MultiViewTransformerOutput],
+        Tuple[MultiViewTransformerOutput, List[MultiViewTransformerOutput]],
     ]:
         """
         Forward interface for the Multi-View Alternating-Attention Transformer with Intermediate Feature Return.
 
         Args:
-            model_input (MultiViewAlternatingAttentionTransformerInput): Input to the model.
+            model_input (MultiViewTransformerInput): Input to the model.
                 Expects the features to be a list of size (batch, input_embed_dim, height, width),
                 where each entry corresponds to a different view.
 
         Returns:
-            Union[List[MultiViewAlternatingAttentionTransformerOutput], Tuple[MultiViewAlternatingAttentionTransformerOutput, List[MultiViewAlternatingAttentionTransformerOutput]]]:
+            Union[List[MultiViewTransformerOutput], Tuple[MultiViewTransformerOutput, List[MultiViewTransformerOutput]]]:
                 Output of the model post information sharing.
                 If intermediates_only is True, returns a list of intermediate outputs.
                 If intermediates_only is False, returns a tuple of final output and a list of intermediate outputs.
@@ -533,7 +517,7 @@ class MultiViewAlternatingAttentionTransformerIFR(
                     self.norm(multi_view_features) if self.norm_intermediate else multi_view_features
                 )
 
-        # Reshape the intermediate features and convert to MultiViewAlternatingAttentionTransformerOutput class
+        # Reshape the intermediate features and convert to MultiViewTransformerOutput class
         for idx in range(len(intermediate_multi_view_features)):
             # Reshape the intermediate multi-view features (N, V * H * W, C) back to (N, V, C, H, W)
             intermediate_multi_view_features[idx] = intermediate_multi_view_features[idx].reshape(
@@ -548,7 +532,7 @@ class MultiViewAlternatingAttentionTransformerIFR(
                 intermediate_view_features.squeeze(dim=1)
                 for intermediate_view_features in intermediate_multi_view_features[idx]
             ]
-            intermediate_multi_view_features[idx] = MultiViewAlternatingAttentionTransformerOutput(
+            intermediate_multi_view_features[idx] = MultiViewTransformerOutput(
                 features=intermediate_multi_view_features[idx]
             )
 
@@ -570,7 +554,7 @@ class MultiViewAlternatingAttentionTransformerIFR(
         output_multi_view_features = [
             output_view_features.squeeze(dim=1) for output_view_features in output_multi_view_features
         ]
-        output_multi_view_features = MultiViewAlternatingAttentionTransformerOutput(features=output_multi_view_features)
+        output_multi_view_features = MultiViewTransformerOutput(features=output_multi_view_features)
 
         return output_multi_view_features, intermediate_multi_view_features
 
@@ -591,7 +575,7 @@ if __name__ == "__main__":
             name="MV-AAT", input_embed_dim=1024, max_num_views=1000, use_rand_idx_pe_for_non_reference_views=False
         )
         model_input = [torch.rand(1, 1024, 14, 14) for _ in range(num_views)]
-        model_input = MultiViewAlternatingAttentionTransformerInput(features=model_input)
+        model_input = MultiViewTransformerInput(features=model_input)
         model_output = model(model_input)
         assert len(model_output.features) == num_views
         assert all(f.shape == (1, model.dim, 14, 14) for f in model_output.features)
@@ -600,7 +584,7 @@ if __name__ == "__main__":
             name="MV-AAT", input_embed_dim=1024, max_num_views=1000, use_rand_idx_pe_for_non_reference_views=True
         )
         model_input = [torch.rand(1, 1024, 14, 14) for _ in range(num_views)]
-        model_input = MultiViewAlternatingAttentionTransformerInput(features=model_input)
+        model_input = MultiViewTransformerInput(features=model_input)
         model_output = model(model_input)
         assert len(model_output.features) == num_views
         assert all(f.shape == (1, model.dim, 14, 14) for f in model_output.features)
@@ -618,7 +602,7 @@ if __name__ == "__main__":
             custom_positional_encoding=dummy_positional_encoding,
         )
         model_input = [torch.rand(1, 1024, 14, 14) for _ in range(num_views)]
-        model_input = MultiViewAlternatingAttentionTransformerInput(features=model_input)
+        model_input = MultiViewTransformerInput(features=model_input)
         model_output = model(model_input)
         assert len(model_output.features) == num_views
         assert all(f.shape == (1, model.dim, 14, 14) for f in model_output.features)
@@ -637,12 +621,12 @@ if __name__ == "__main__":
         indices=6,  # Last 6 layers
     )
     model_input = [torch.rand(1, 1024, 14, 14) for _ in range(2)]
-    model_input = MultiViewAlternatingAttentionTransformerInput(features=model_input)
+    model_input = MultiViewTransformerInput(features=model_input)
     output = model_intermediate_feature_returner(model_input)
     assert isinstance(output, tuple)
-    assert isinstance(output[0], MultiViewAlternatingAttentionTransformerOutput)
+    assert isinstance(output[0], MultiViewTransformerOutput)
     assert len(output[1]) == 6
-    assert all(isinstance(intermediate, MultiViewAlternatingAttentionTransformerOutput) for intermediate in output[1])
+    assert all(isinstance(intermediate, MultiViewTransformerOutput) for intermediate in output[1])
     assert len(output[1][0].features) == 2
 
     # Run the intermediate feature returner with specific indices
@@ -654,12 +638,12 @@ if __name__ == "__main__":
         indices=[0, 2, 4, 6],  # Specific indices
     )
     model_input = [torch.rand(1, 1024, 14, 14) for _ in range(2)]
-    model_input = MultiViewAlternatingAttentionTransformerInput(features=model_input)
+    model_input = MultiViewTransformerInput(features=model_input)
     output = model_intermediate_feature_returner(model_input)
     assert isinstance(output, tuple)
-    assert isinstance(output[0], MultiViewAlternatingAttentionTransformerOutput)
+    assert isinstance(output[0], MultiViewTransformerOutput)
     assert len(output[1]) == 4
-    assert all(isinstance(intermediate, MultiViewAlternatingAttentionTransformerOutput) for intermediate in output[1])
+    assert all(isinstance(intermediate, MultiViewTransformerOutput) for intermediate in output[1])
     assert len(output[1][0].features) == 2
 
     # Test the normalizing of intermediate features
@@ -672,7 +656,7 @@ if __name__ == "__main__":
         norm_intermediate=False,  # Disable normalization
     )
     model_input = [torch.rand(1, 1024, 14, 14) for _ in range(2)]
-    model_input = MultiViewAlternatingAttentionTransformerInput(features=model_input)
+    model_input = MultiViewTransformerInput(features=model_input)
     output = model_intermediate_feature_returner(model_input)
     for view_idx in range(2):
         assert not torch.equal(
@@ -688,7 +672,7 @@ if __name__ == "__main__":
         norm_intermediate=True,
     )
     model_input = [torch.rand(1, 1024, 14, 14) for _ in range(2)]
-    model_input = MultiViewAlternatingAttentionTransformerInput(features=model_input)
+    model_input = MultiViewTransformerInput(features=model_input)
     output = model_intermediate_feature_returner(model_input)
     for view_idx in range(2):
         assert torch.equal(
