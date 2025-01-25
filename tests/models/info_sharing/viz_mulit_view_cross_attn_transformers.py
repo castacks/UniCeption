@@ -17,9 +17,7 @@ from sklearn.decomposition import PCA
 from uniception.models.encoders import *
 from uniception.models.encoders.image_normalizations import *
 from uniception.models.info_sharing.base import MultiViewTransformerInput
-from uniception.models.info_sharing.cross_attention_transformer import (
-    MultiViewCrossAttentionTransformerIFR,
-)
+from uniception.models.info_sharing.cross_attention_transformer import MultiViewCrossAttentionTransformerIFR
 from uniception.models.libs.croco.pos_embed import RoPE2D, get_2d_sincos_pos_embed
 
 

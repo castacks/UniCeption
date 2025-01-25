@@ -12,9 +12,9 @@ import torch.nn as nn
 from jaxtyping import Float
 from torch import Tensor
 from uniception.models.info_sharing.base import (
-    UniCeptionInfoSharingBase,
     MultiViewTransformerInput,
     MultiViewTransformerOutput,
+    UniCeptionInfoSharingBase,
 )
 from uniception.models.utils.intermediate_feature_return import IntermediateFeatureReturner, feature_take_indices
 from uniception.models.utils.positional_encoding import PositionGetter
