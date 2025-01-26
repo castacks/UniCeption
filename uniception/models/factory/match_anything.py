@@ -7,12 +7,11 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 from torch import nn
-
 from uniception.models.encoders import ViTEncoderInput, encoder_factory
+from uniception.models.info_sharing.base import MultiViewTransformerInput
 from uniception.models.info_sharing.cross_attention_transformer import (
     MultiViewCrossAttentionTransformer,
     MultiViewCrossAttentionTransformerIFR,
-    MultiViewCrossAttentionTransformerInput,
 )
 from uniception.models.libs.croco.pos_embed import RoPE2D
 from uniception.models.prediction_heads.adaptors import (
@@ -46,12 +45,8 @@ def interleave(tensor1, tensor2):
     return res1, res2
 
 
-CLASSNAME_TO_ADAPTOR_CLASS = {
-    "FlowAdaptor": FlowAdaptor,
-    "FlowWithConfidenceAdaptor": FlowWithConfidenceAdaptor,
-    "Covariance2DAdaptor": Covariance2DAdaptor,
-    "MaskAdaptor": MaskAdaptor,
-}
+CLASSNAME_TO_ADAPTOR_CLASS = {"FlowWithConfidenceAdaptor": FlowWithConfidenceAdaptor, "MaskAdaptor": MaskAdaptor}
+
 
 class MatchAnythingModel(nn.Module):
     """
@@ -208,8 +203,7 @@ class MatchAnythingModel(nn.Module):
         # initialize prediction heads and adaptors
         if info_sharing_and_head_structure == "dual+single":
             self.add_module("head1", self._initialize_prediction_heads(head_type, feature_head_kwargs, adaptors_kwargs))
-            self.info_sharing.multi_view_branches[1][-1].requires_grad_(False) # disable gradients in the alternate branch to enable ddp
-        elif info_sharing_and_head_structure == "dual+dual":
+        elif decoder_structure == "dual+dual":
             self.add_module("head1", self._initialize_prediction_heads(head_type, feature_head_kwargs, adaptors_kwargs))
             self.add_module("head2", self._initialize_prediction_heads(head_type, feature_head_kwargs, adaptors_kwargs))
         elif info_sharing_and_head_structure == "dual+share":
@@ -344,8 +338,8 @@ class MatchAnythingModel(nn.Module):
         # Encode the two images --> Each feat output: BCHW features (batch_size, feature_dim, feature_height, feature_width)
         feat1, feat2 = self._encode_symmetrized(view1, view2)
 
-        # Pass the features through the info_sharing
-        info_sharing_input = MultiViewCrossAttentionTransformerInput(features=[feat1, feat2])
+        # Pass the features through the decoder
+        decoder_input = MultiViewCrossAttentionTransformerInput(features=[feat1, feat2])
         if self.head_type == "dpt":
             final_info_sharing_multi_view_feat, intermediate_info_sharing_multi_view_feat = self.info_sharing(
                 info_sharing_input
@@ -376,68 +370,11 @@ class MatchAnythingModel(nn.Module):
             }
 
         # The prediction need precision, so we disable any autocasting here
-        with torch.autocast("cuda", enabled=False): # 
-            # run the collected info_sharing features through the prediction heads
-            if self.info_sharing_and_head_structure == "dual+single":
+        with torch.autocast("cuda", enabled=False):
+            # run the collected decoder features through the prediction heads
+            if self.decoder_structure == "dual+single":
                 # pass through head1 only and return the output
-                head_output1 = self._downstream_head(1, info_sharing_outputs, shape1)
-
-                if "flow_with_confidence" in head_output1 and "flow_cov" in head_output1:
-                    # output is flow + confidence + covariance
-                    res1 = {
-                        "flow": head_output1["flow_with_confidence"].value,
-                        "flow_conf": head_output1["flow_with_confidence"].confidence,
-                        "flow_covariance": head_output1["flow_cov"].covariance,
-                        "flow_covariance_inv": head_output1["flow_cov"].inv_covariance,
-                        "flow_covariance_log_det": head_output1["flow_cov"].log_det,
-                        "non_occluded_fwd": head_output1["non_occluded_mask"],
-                    }
-
-                    return {
-                        "flow": {
-                            "flow_output": res1["flow"],
-                            "flow_output_conf": res1["flow_conf"],
-                            "flow_covariance": res1["flow_covariance"],
-                            "flow_covariance_inv": res1["flow_covariance_inv"],
-                            "flow_covariance_log_det": res1["flow_covariance_log_det"],
-                        },
-                        "occlusion": {
-                            "mask": res1["non_occluded_fwd"].mask,
-                            "logits": res1["non_occluded_fwd"].logits,
-                        },
-                    }
-
-                if "flow" in head_output1 and ("non_occluded_mask" not in head_output1):
-                    # output is flow only
-                    return {
-                        "flow": {
-                            "flow_output": head_output1["flow"].value,
-                        },
-                    }
-
-
-                if "flow" in head_output1 and "flow_cov" in head_output1:
-                    # output is flow + covariance
-                    res1 = {
-                        "flow": head_output1["flow"].value,
-                        "flow_covariance": head_output1["flow_cov"].covariance,
-                        "flow_covariance_inv": head_output1["flow_cov"].inv_covariance,
-                        "flow_covariance_log_det": head_output1["flow_cov"].log_det,
-                        "non_occluded_fwd": head_output1["non_occluded_mask"],
-                    }
-
-                    return {
-                        "flow": {
-                            "flow_output": res1["flow"],
-                            "flow_covariance": res1["flow_covariance"],
-                            "flow_covariance_inv": res1["flow_covariance_inv"],
-                            "flow_covariance_log_det": res1["flow_covariance_log_det"],
-                        },
-                        "occlusion": {
-                            "mask": res1["non_occluded_fwd"].mask,
-                            "logits": res1["non_occluded_fwd"].logits,
-                        },
-                    }
+                head_output1 = self._downstream_head(1, decoder_outputs, shape1)
 
                 res1 = {
                     "flow": head_output1["flow_with_confidence"].value,
