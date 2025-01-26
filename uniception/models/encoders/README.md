@@ -8,6 +8,7 @@
    - `CroCoIntermediateFeatureReturner`
 - `DINOv2Encoder`
    - `DINOv2IntermediateFeatureReturner`
+- `PatchEmbedder`
 - `RADIOEncoder`
    - `RADIOIntermediateFeatureReturner`
 

@@ -86,6 +86,12 @@ class ViTEncoderInput(EncoderInput):
 
 
 @dataclass
+class ViTEncoderNonImageInput:
+    "Data class for Vision (2D-Grid) Transformer Encoder Non-Image Input"
+    data: Float[Tensor, "batch channel height width"]
+
+
+@dataclass
 class ViTEncoderOutput(EncoderOutput):
     "Data class for Vision Transformer Encoder Output"
     features: Float[Tensor, "batch enc_embed_dim feat_height feat_width"]

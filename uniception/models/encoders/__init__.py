@@ -13,6 +13,7 @@ from uniception.models.encoders.base import (
 )
 from uniception.models.encoders.croco import CroCoEncoder
 from uniception.models.encoders.dinov2 import DINOv2Encoder
+from uniception.models.encoders.patch_embedder import PatchEmbedder
 from uniception.models.encoders.radio import RADIOEncoder
 
 # Define encoder configurations
@@ -24,6 +25,10 @@ ENCODER_CONFIGS = {
     "dinov2": {
         "class": DINOv2Encoder,
         "supported_models": ["DINOv2", "DINOv2-Registers", "DINOv2-Depth-Anythingv2"],
+    },
+    "patch_embedder": {
+        "class": PatchEmbedder,
+        "supported_models": ["Patch-Embedder"],
     },
     "radio": {
         "class": RADIOEncoder,
@@ -148,6 +153,10 @@ def _make_encoder_test(encoder_str: str, **kwargs) -> UniCeptionEncoderBase:
             name=encoder_str,
             model_version=encoder_str,
             eradio_input_shape=eradio_input_shape,
+        )
+    elif "patch_embedder" in encoder_str:
+        return PatchEmbedder(
+            name=encoder_str,
         )
     else:
         raise ValueError(f"Unknown encoder: {encoder_str}")
