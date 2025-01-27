@@ -15,7 +15,7 @@ from torch import Tensor
 from uniception.models.info_sharing.base import InfoSharingInput, InfoSharingOutput, UniCeptionInfoSharingBase
 from uniception.models.utils.intermediate_feature_return import IntermediateFeatureReturner, feature_take_indices
 from uniception.models.utils.transformer_blocks import CrossAttentionBlock, Mlp, DiffCrossAttentionBlock
-from uniception.models.info_sharing.cross_attention_transformer import PositionGetter, MultiViewCrossAttentionTransformerInput, MultiViewCrossAttentionTransformerOutput
+from uniception.models.info_sharing.cross_attention_transformer import PositionGetter, MultiViewTransformerInput, MultiViewTransformerOutput
 
 class DifferentialMultiViewCrossAttentionTransformer(UniCeptionInfoSharingBase):
     "UniCeption Multi-View Cross-Attention Transformer for information sharing across image features from different views."
@@ -164,18 +164,18 @@ class DifferentialMultiViewCrossAttentionTransformer(UniCeptionInfoSharingBase):
 
     def forward(
         self,
-        model_input: MultiViewCrossAttentionTransformerInput,
-    ) -> MultiViewCrossAttentionTransformerOutput:
+        model_input: MultiViewTransformerInput,
+    ) -> MultiViewTransformerOutput:
         """
         Forward interface for the Multi-View Cross-Attention Transformer.
 
         Args:
-            model_input (MultiViewCrossAttentionTransformerInput): Input to the model.
+            model_input (MultiViewTransformerInput): Input to the model.
                 Expects the features to be a list of size (batch, input_embed_dim, height, width),
                 where each entry corresponds to a different view.
 
         Returns:
-            MultiViewCrossAttentionTransformerOutput: Output of the model post information sharing.
+            MultiViewTransformerOutput: Output of the model post information sharing.
         """
         # Check that the number of views matches the input and the features are of expected shape
         assert (
@@ -246,7 +246,7 @@ class DifferentialMultiViewCrossAttentionTransformer(UniCeptionInfoSharingBase):
             for view_features in output_multi_view_features
         ]
 
-        return MultiViewCrossAttentionTransformerOutput(features=output_multi_view_features)
+        return MultiViewTransformerOutput(features=output_multi_view_features)
 
 
 class DifferentialMultiViewCrossAttentionTransformerIFR(DifferentialMultiViewCrossAttentionTransformer, IntermediateFeatureReturner):
@@ -346,21 +346,21 @@ class DifferentialMultiViewCrossAttentionTransformerIFR(DifferentialMultiViewCro
 
     def forward(
         self,
-        model_input: MultiViewCrossAttentionTransformerInput,
+        model_input: MultiViewTransformerInput,
     ) -> Union[
-        List[MultiViewCrossAttentionTransformerOutput],
-        Tuple[MultiViewCrossAttentionTransformerOutput, List[MultiViewCrossAttentionTransformerOutput]],
+        List[MultiViewTransformerOutput],
+        Tuple[MultiViewTransformerOutput, List[MultiViewTransformerOutput]],
     ]:
         """
         Forward interface for the Multi-View Cross-Attention Transformer with Intermediate Feature Return.
 
         Args:
-            model_input (MultiViewCrossAttentionTransformerInput): Input to the model.
+            model_input (MultiViewTransformerInput): Input to the model.
                 Expects the features to be a list of size (batch, input_embed_dim, height, width),
                 where each entry corresponds to a different view.
 
         Returns:
-            Union[List[MultiViewCrossAttentionTransformerOutput], Tuple[MultiViewCrossAttentionTransformerOutput, List[MultiViewCrossAttentionTransformerOutput]]]:
+            Union[List[MultiViewTransformerOutput], Tuple[MultiViewTransformerOutput, List[MultiViewTransformerOutput]]]:
                 Output of the model post information sharing.
                 If intermediates_only is True, returns a list of intermediate outputs.
                 If intermediates_only is False, returns a tuple of final output and a list of intermediate outputs.
@@ -437,13 +437,13 @@ class DifferentialMultiViewCrossAttentionTransformerIFR(DifferentialMultiViewCro
                     else multi_view_features
                 )
 
-        # Reshape the intermediate features and convert to MultiViewCrossAttentionTransformerOutput class
+        # Reshape the intermediate features and convert to MultiViewTransformerOutput class
         for idx in range(len(intermediate_multi_view_features)):
             intermediate_multi_view_features[idx] = [
                 view_features.reshape(batch_size, height, width, self.dim).permute(0, 3, 1, 2).contiguous()
                 for view_features in intermediate_multi_view_features[idx]
             ]
-            intermediate_multi_view_features[idx] = MultiViewCrossAttentionTransformerOutput(
+            intermediate_multi_view_features[idx] = MultiViewTransformerOutput(
                 features=intermediate_multi_view_features[idx]
             )
 
@@ -460,7 +460,7 @@ class DifferentialMultiViewCrossAttentionTransformerIFR(DifferentialMultiViewCro
             for view_features in output_multi_view_features
         ]
 
-        output_multi_view_features = MultiViewCrossAttentionTransformerOutput(features=output_multi_view_features)
+        output_multi_view_features = MultiViewTransformerOutput(features=output_multi_view_features)
 
         return output_multi_view_features, intermediate_multi_view_features
 
@@ -478,7 +478,7 @@ if __name__ == "__main__":
         print(f"Testing MultiViewCrossAttentionTransformer with {num_views} views ...")
         model = DifferentialMultiViewCrossAttentionTransformer(name="MV-DCAT", input_embed_dim=1024, num_views=num_views)
         model_input = [torch.rand(1, 1024, 14, 14) for _ in range(num_views)]
-        model_input = MultiViewCrossAttentionTransformerInput(features=model_input)
+        model_input = MultiViewTransformerInput(features=model_input)
         model_output = model(model_input)
         assert len(model_output.features) == num_views
         assert all(f.shape == (1, model.dim, 14, 14) for f in model_output.features)
@@ -493,7 +493,7 @@ if __name__ == "__main__":
             custom_positional_encoding=dummy_positional_encoding,
         )
         model_input = [torch.rand(1, 1024, 14, 14) for _ in range(num_views)]
-        model_input = MultiViewCrossAttentionTransformerInput(features=model_input)
+        model_input = MultiViewTransformerInput(features=model_input)
         model_output = model(model_input)
         assert len(model_output.features) == num_views
         assert all(f.shape == (1, model.dim, 14, 14) for f in model_output.features)
@@ -511,12 +511,12 @@ if __name__ == "__main__":
         indices=6,  # Last 6 layers
     )
     model_input = [torch.rand(1, 1024, 14, 14) for _ in range(2)]
-    model_input = MultiViewCrossAttentionTransformerInput(features=model_input)
+    model_input = MultiViewTransformerInput(features=model_input)
     output = model_intermediate_feature_returner(model_input)
     assert isinstance(output, tuple)
-    assert isinstance(output[0], MultiViewCrossAttentionTransformerOutput)
+    assert isinstance(output[0], MultiViewTransformerOutput)
     assert len(output[1]) == 6
-    assert all(isinstance(intermediate, MultiViewCrossAttentionTransformerOutput) for intermediate in output[1])
+    assert all(isinstance(intermediate, MultiViewTransformerOutput) for intermediate in output[1])
     assert len(output[1][0].features) == 2
 
     # Run the intermediate feature returner with specific indices
@@ -527,12 +527,12 @@ if __name__ == "__main__":
         indices=[0, 2, 4, 6],  # Specific indices
     )
     model_input = [torch.rand(1, 1024, 14, 14) for _ in range(2)]
-    model_input = MultiViewCrossAttentionTransformerInput(features=model_input)
+    model_input = MultiViewTransformerInput(features=model_input)
     output = model_intermediate_feature_returner(model_input)
     assert isinstance(output, tuple)
-    assert isinstance(output[0], MultiViewCrossAttentionTransformerOutput)
+    assert isinstance(output[0], MultiViewTransformerOutput)
     assert len(output[1]) == 4
-    assert all(isinstance(intermediate, MultiViewCrossAttentionTransformerOutput) for intermediate in output[1])
+    assert all(isinstance(intermediate, MultiViewTransformerOutput) for intermediate in output[1])
     assert len(output[1][0].features) == 2
 
     # Test the normalizing of intermediate features
@@ -544,7 +544,7 @@ if __name__ == "__main__":
         norm_intermediate=False,  # Disable normalization
     )
     model_input = [torch.rand(1, 1024, 14, 14) for _ in range(2)]
-    model_input = MultiViewCrossAttentionTransformerInput(features=model_input)
+    model_input = MultiViewTransformerInput(features=model_input)
     output = model_intermediate_feature_returner(model_input)
     for view_idx in range(2):
         assert not torch.equal(
@@ -559,7 +559,7 @@ if __name__ == "__main__":
         norm_intermediate=True,
     )
     model_input = [torch.rand(1, 1024, 14, 14) for _ in range(2)]
-    model_input = MultiViewCrossAttentionTransformerInput(features=model_input)
+    model_input = MultiViewTransformerInput(features=model_input)
     output = model_intermediate_feature_returner(model_input)
     for view_idx in range(2):
         assert torch.equal(

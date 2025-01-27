@@ -29,8 +29,8 @@ class MultiViewAlternatingAttentionTransformer(UniCeptionInfoSharingBase):
         self,
         name: str,
         input_embed_dim: int,
-        max_num_views: int,
-        use_rand_idx_pe_for_non_reference_views: bool,
+        num_views: int,
+        use_rand_idx_pe_for_non_reference_views: bool = False,
         size: Optional[str] = None,
         depth: int = 12,
         dim: int = 768,
@@ -56,7 +56,7 @@ class MultiViewAlternatingAttentionTransformer(UniCeptionInfoSharingBase):
 
         Args:
             input_embed_dim (int): Dimension of input embeddings.
-            max_num_views (int): Maximum number of views for positional encoding.
+            num_views (int): Maximum number of views for positional encoding.
             use_rand_idx_pe_for_non_reference_views (bool): Whether to use random index positional encoding for non-reference views.
             size (str): String to indicate interpretable size of the transformer (for e.g., base, large, ...). (default: None)
             depth (int): Number of transformer layers. (default: 12, base size)
@@ -80,7 +80,7 @@ class MultiViewAlternatingAttentionTransformer(UniCeptionInfoSharingBase):
 
         # Initialize the specific attributes of the transformer
         self.input_embed_dim = input_embed_dim
-        self.max_num_views = max_num_views
+        self.max_num_views = num_views
         self.use_rand_idx_pe_for_non_reference_views = use_rand_idx_pe_for_non_reference_views
         self.depth = depth
         self.dim = dim
@@ -232,23 +232,23 @@ class MultiViewAlternatingAttentionTransformer(UniCeptionInfoSharingBase):
             multi_view_positions = [None] * num_of_views
 
         # Add positional encoding for reference view (idx 0)
-        ref_view_pe = self.view_pos_table[0].clone().detach()
-        ref_view_pe = ref_view_pe.reshape((1, 1, self.dim))
-        ref_view_pe = ref_view_pe.repeat(batch_size, num_of_tokens_per_view, 1)
+        # ref_view_pe = self.view_pos_table[0].clone().detach()
+        # ref_view_pe = ref_view_pe.reshape((1, 1, self.dim))
+        # ref_view_pe = ref_view_pe.repeat(batch_size, num_of_tokens_per_view, 1)
         ref_view_features = multi_view_features[:, :num_of_tokens_per_view, :]
-        ref_view_features = ref_view_features + ref_view_pe
+        # ref_view_features = ref_view_features + ref_view_pe
 
         # Add positional encoding for non-reference views (sequential indices starting from idx 1 or random indices which are uniformly sampled)
-        if self.use_rand_idx_pe_for_non_reference_views:
-            non_ref_view_pe_indices = torch.randint(low=1, high=self.max_num_views, size=(num_of_views - 1,))
-        else:
-            non_ref_view_pe_indices = torch.arange(1, num_of_views)
-        non_ref_view_pe = self.view_pos_table[non_ref_view_pe_indices].clone().detach()
-        non_ref_view_pe = non_ref_view_pe.reshape((1, num_of_views - 1, self.dim))
-        non_ref_view_pe = non_ref_view_pe.repeat_interleave(num_of_tokens_per_view, dim=1)
-        non_ref_view_pe = non_ref_view_pe.repeat(batch_size, 1, 1)
+        # if self.use_rand_idx_pe_for_non_reference_views:
+        #     non_ref_view_pe_indices = torch.randint(low=1, high=self.max_num_views, size=(num_of_views - 1,))
+        # else:
+        #     non_ref_view_pe_indices = torch.arange(1, num_of_views)
+        # non_ref_view_pe = self.view_pos_table[non_ref_view_pe_indices].clone().detach()
+        # non_ref_view_pe = non_ref_view_pe.reshape((1, num_of_views - 1, self.dim))
+        # non_ref_view_pe = non_ref_view_pe.repeat_interleave(num_of_tokens_per_view, dim=1)
+        # non_ref_view_pe = non_ref_view_pe.repeat(batch_size, 1, 1)
         non_ref_view_features = multi_view_features[:, num_of_tokens_per_view:, :]
-        non_ref_view_features = non_ref_view_features + non_ref_view_pe
+        # non_ref_view_features = non_ref_view_features + non_ref_view_pe
 
         # Concatenate the reference and non-reference view features
         multi_view_features = torch.cat([ref_view_features, non_ref_view_features], dim=1)
@@ -310,8 +310,8 @@ class MultiViewAlternatingAttentionTransformerIFR(
         self,
         name: str,
         input_embed_dim: int,
-        max_num_views: int,
-        use_rand_idx_pe_for_non_reference_views: bool,
+        num_views: int,
+        use_rand_idx_pe_for_non_reference_views: bool = False,
         size: Optional[str] = None,
         depth: int = 12,
         dim: int = 768,
@@ -370,7 +370,7 @@ class MultiViewAlternatingAttentionTransformerIFR(
             self,
             name=name,
             input_embed_dim=input_embed_dim,
-            max_num_views=max_num_views,
+            num_views=num_views,
             use_rand_idx_pe_for_non_reference_views=use_rand_idx_pe_for_non_reference_views,
             size=size,
             depth=depth,
@@ -572,7 +572,7 @@ if __name__ == "__main__":
         print(f"Testing MultiViewAlternatingAttentionTransformer with {num_views} views ...")
         # Sequential idx based positional encoding
         model = MultiViewAlternatingAttentionTransformer(
-            name="MV-AAT", input_embed_dim=1024, max_num_views=1000, use_rand_idx_pe_for_non_reference_views=False
+            name="MV-AAT", input_embed_dim=1024, num_views=1000, use_rand_idx_pe_for_non_reference_views=False
         )
         model_input = [torch.rand(1, 1024, 14, 14) for _ in range(num_views)]
         model_input = MultiViewTransformerInput(features=model_input)
@@ -581,7 +581,7 @@ if __name__ == "__main__":
         assert all(f.shape == (1, model.dim, 14, 14) for f in model_output.features)
         # Random idx based positional encoding
         model = MultiViewAlternatingAttentionTransformer(
-            name="MV-AAT", input_embed_dim=1024, max_num_views=1000, use_rand_idx_pe_for_non_reference_views=True
+            name="MV-AAT", input_embed_dim=1024, num_views=1000, use_rand_idx_pe_for_non_reference_views=True
         )
         model_input = [torch.rand(1, 1024, 14, 14) for _ in range(num_views)]
         model_input = MultiViewTransformerInput(features=model_input)
@@ -597,7 +597,7 @@ if __name__ == "__main__":
         model = MultiViewAlternatingAttentionTransformer(
             name="MV-AAT",
             input_embed_dim=1024,
-            max_num_views=1000,
+            num_views=1000,
             use_rand_idx_pe_for_non_reference_views=True,
             custom_positional_encoding=dummy_positional_encoding,
         )
@@ -616,7 +616,7 @@ if __name__ == "__main__":
     model_intermediate_feature_returner = MultiViewAlternatingAttentionTransformerIFR(
         name="MV-AAT-IFR",
         input_embed_dim=1024,
-        max_num_views=1000,
+        num_views=1000,
         use_rand_idx_pe_for_non_reference_views=True,
         indices=6,  # Last 6 layers
     )
@@ -633,7 +633,7 @@ if __name__ == "__main__":
     model_intermediate_feature_returner = MultiViewAlternatingAttentionTransformerIFR(
         name="MV-AAT-IFR",
         input_embed_dim=1024,
-        max_num_views=1000,
+        num_views=1000,
         use_rand_idx_pe_for_non_reference_views=True,
         indices=[0, 2, 4, 6],  # Specific indices
     )
@@ -650,7 +650,7 @@ if __name__ == "__main__":
     model_intermediate_feature_returner = MultiViewAlternatingAttentionTransformerIFR(
         name="MV-AAT-IFR",
         input_embed_dim=1024,
-        max_num_views=1000,
+        num_views=1000,
         use_rand_idx_pe_for_non_reference_views=True,
         indices=[-1],  # Last layer
         norm_intermediate=False,  # Disable normalization
@@ -666,7 +666,7 @@ if __name__ == "__main__":
     model_intermediate_feature_returner = MultiViewAlternatingAttentionTransformerIFR(
         name="MV-AAT-IFR",
         input_embed_dim=1024,
-        max_num_views=1000,
+        num_views=1000,
         use_rand_idx_pe_for_non_reference_views=True,
         indices=[-1],  # Last layer
         norm_intermediate=True,

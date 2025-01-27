@@ -45,7 +45,11 @@ def interleave(tensor1, tensor2):
     return res1, res2
 
 
-CLASSNAME_TO_ADAPTOR_CLASS = {"FlowWithConfidenceAdaptor": FlowWithConfidenceAdaptor, "MaskAdaptor": MaskAdaptor}
+CLASSNAME_TO_ADAPTOR_CLASS = {
+    "FlowWithConfidenceAdaptor": FlowWithConfidenceAdaptor, 
+    "FlowAdaptor": FlowAdaptor,
+    "MaskAdaptor": MaskAdaptor
+}
 
 
 class MatchAnythingModel(nn.Module):
@@ -339,7 +343,7 @@ class MatchAnythingModel(nn.Module):
         feat1, feat2 = self._encode_symmetrized(view1, view2)
 
         # Pass the features through the decoder
-        decoder_input = MultiViewCrossAttentionTransformerInput(features=[feat1, feat2])
+        decoder_input = MultiViewTransformerInput(features=[feat1, feat2])
         if self.head_type == "dpt":
             final_info_sharing_multi_view_feat, intermediate_info_sharing_multi_view_feat = self.info_sharing(
                 info_sharing_input
