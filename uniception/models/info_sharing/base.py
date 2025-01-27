@@ -56,16 +56,6 @@ class UniCeptionInfoSharingBase(nn.Module):
         raise NotImplementedError
 
 
-class IntermediateFeatureReturner:
-    def __init__(self, total_num_layers: int, selected_layers: List[int]):
-        """
-        Class to return intermediate features from the encoder.
-        """
-        self.total_num_layers: int = total_num_layers
-        self.selected_layers: List[int] = selected_layers
-        self.num_intermediate_layers: int = len(selected_layers)
-
-
 @dataclass
 class MultiViewTransformerInput(InfoSharingInput):
     """
