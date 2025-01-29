@@ -2,10 +2,10 @@
 Encoder class for Patch Embedder
 """
 
-from functools import partial
-from typing import Callable, Tuple, Union
-
 import math
+from functools import partial
+from typing import Callable, Optional, Tuple, Union
+
 import torch
 import torch.nn as nn
 from torch.nn.init import trunc_normal_
@@ -37,7 +37,8 @@ class PatchEmbedder(UniCeptionViTEncoderBase):
         patch_size: int = 14,
         in_chans: int = 3,
         enc_embed_dim: int = 1024,
-        norm_layer: Callable = partial(nn.LayerNorm, eps=1e-6),
+        norm_layer: Optional[Callable] = None,
+        post_pe_norm_layer: Optional[Callable] = partial(nn.LayerNorm, eps=1e-6),
         interpolate_antialias: bool = False,
         interpolate_offset: float = 0.1,
         pretrained_checkpoint_path: str = None,
@@ -74,6 +75,9 @@ class PatchEmbedder(UniCeptionViTEncoderBase):
         trunc_normal_(self.pos_embed, std=0.02)
         self.interpolate_antialias = interpolate_antialias
         self.interpolate_offset = interpolate_offset
+
+        # Init the norm layer after positional encoding
+        self.post_pe_norm = post_pe_norm_layer(enc_embed_dim) if post_pe_norm_layer else nn.Identity()
 
         # Load the pretrained checkpoint if provided
         self.pretrained_checkpoint_path = pretrained_checkpoint_path
@@ -160,10 +164,11 @@ class PatchEmbedder(UniCeptionViTEncoderBase):
         features = features.flatten(2).transpose(
             1, 2
         )  # (B, E, H / Patch_Size, W / Patch_Size) -> (B, H / Patch_Size * W / Patch_Size, E)
+        features = self.norm(features)  # Normalize the features after patch embedding
         features = features + self.interpolate_pos_encoding(
             features, height, width
         )  # (B, H / Patch_Size * W / Patch_Size, E)
-        features = self.norm(features)  # Normalize the features
+        features = self.post_pe_norm(features)  # Normalize the features after positional encoding
 
         # Resize the features to the expected shape
         # (B x Num_patches x Embed_dim) -> (B x Embed_dim x H / Patch_Size x W / Patch_Size)
