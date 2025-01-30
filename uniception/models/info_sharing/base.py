@@ -54,6 +54,18 @@ class UniCeptionInfoSharingBase(nn.Module):
         """
 
         raise NotImplementedError
+    
+    def wrap_module_with_gradient_checkpointing(self, module: nn.Module):
+        from torch.utils.checkpoint import checkpoint
+
+        class _CheckpointingWrapper(module.__class__):
+            _restore_cls = module.__class__
+
+            def forward(self, *args, **kwargs):
+                return checkpoint(super().forward, *args, use_reentrant=False, **kwargs)
+
+        module.__class__ = _CheckpointingWrapper
+        return module
 
 
 class IntermediateFeatureReturner:

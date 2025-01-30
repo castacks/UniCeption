@@ -48,6 +48,7 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
         mlp_layer: Type[nn.Module] = Mlp,
         custom_positional_encoding: Optional[Callable] = None,
         pretrained_checkpoint_path: Optional[str] = None,
+        gradient_checkpointing: bool = False,
         *args,
         **kwargs,
     ):
@@ -97,6 +98,7 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
         self.mlp_layer = mlp_layer
         self.custom_positional_encoding = custom_positional_encoding
         self.pretrained_checkpoint_path = pretrained_checkpoint_path
+        self.gradient_checkpointing = gradient_checkpointing
 
         # Initialize the projection layer for input embeddings
         if self.input_embed_dim != self.dim:
@@ -149,6 +151,11 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
             )
             ckpt = torch.load(self.pretrained_checkpoint_path, weights_only=False)
             print(self.load_state_dict(ckpt["model"]))
+        
+        # apply gradient checkpointing if enabled
+        if self.gradient_checkpointing:
+            for i, block in enumerate(self.self_attention_blocks):
+                self.self_attention_blocks[i] = self.wrap_module_with_gradient_checkpointing(block)
 
     def _get_sinusoid_encoding_table(self, n_position, d_hid, base):
         "Sinusoid position encoding table"
@@ -305,6 +312,7 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
         indices: Optional[Union[int, List[int]]] = None,
         norm_intermediate: bool = True,
         intermediates_only: bool = False,
+        gradient_checkpointing: bool = False,
         *args,
         **kwargs,
     ):
@@ -362,6 +370,7 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
             mlp_layer=mlp_layer,
             custom_positional_encoding=custom_positional_encoding,
             pretrained_checkpoint_path=pretrained_checkpoint_path,
+            gradient_checkpointing=gradient_checkpointing,
             *args,
             **kwargs,
         )
