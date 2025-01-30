@@ -5,6 +5,8 @@ Encoder Class for DINOv2
 from typing import List, Optional, Union
 
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 from uniception.models.encoders.base import UniCeptionViTEncoderBase, ViTEncoderInput, ViTEncoderOutput
 from uniception.models.utils.intermediate_feature_return import IntermediateFeatureReturner
@@ -22,6 +24,8 @@ class DINOv2Encoder(UniCeptionViTEncoderBase):
         with_registers: bool = False,
         pretrained_checkpoint_path: str = None,
         torch_hub_force_reload: bool = False,
+        use_pytorch_sdpa=True,
+        gradient_checkpointing=False,
         *args,
         **kwargs,
     ):
@@ -43,6 +47,7 @@ class DINOv2Encoder(UniCeptionViTEncoderBase):
             name=name,
             data_norm_type=data_norm_type,
             patch_size=patch_size,
+            gradient_checkpointing=gradient_checkpointing,
             *args,
             **kwargs,
         )
@@ -79,11 +84,46 @@ class DINOv2Encoder(UniCeptionViTEncoderBase):
         # except:  # Load from cache
         self.model = torch.hub.load("facebookresearch/dinov2", DINO_MODELS[self.with_registers][self.version])
 
+        if use_pytorch_sdpa:
+            self.enable_pytorch_native_sdpa()
+
+        if self.gradient_checkpointing:
+            for i in range(len(self.model.blocks)):
+                self.model.blocks[i] = self.wrap_module_with_gradient_checkpointing(self.model.blocks[i])
+
         # Load the custom pretrained checkpoint if provided
         if pretrained_checkpoint_path:
             print(f"Loading custom pretrained DINOv2 checkpoint from {pretrained_checkpoint_path}")
             ckpt = torch.load(pretrained_checkpoint_path, weights_only=False)
             print(self.load_state_dict(ckpt["model"]))
+
+    def enable_pytorch_native_sdpa(self):
+        # this function and the following one to replace DINOv2 layers are copied from MoGe
+        # https://github.com/microsoft/MoGe
+        for i in range(len(self.model.blocks)):
+            self.model.blocks[i].attn = self.wrap_dinov2_attention_with_sdpa(self.model.blocks[i].attn)
+
+    def wrap_dinov2_attention_with_sdpa(self, module: nn.Module):
+        assert torch.__version__ >= "2.0", "SDPA requires PyTorch 2.0 or later"
+
+        class _AttentionWrapper(module.__class__):
+            def forward(self, x: torch.Tensor, attn_bias=None) -> torch.Tensor:
+                B, N, C = x.shape
+                qkv = (
+                    self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+                )  # (3, B, H, N, C // H)
+
+                q, k, v = torch.unbind(qkv, 0)  # (B, H, N, C // H)
+
+                x = F.scaled_dot_product_attention(q, k, v, attn_bias)
+                x = x.permute(0, 2, 1, 3).reshape(B, N, C)
+
+                x = self.proj(x)
+                x = self.proj_drop(x)
+                return x
+
+        module.__class__ = _AttentionWrapper
+        return module
 
     def forward(self, encoder_input: ViTEncoderInput) -> ViTEncoderOutput:
         """
@@ -250,3 +290,23 @@ if __name__ == "__main__":
     assert len(output) == 4, "Output must have length of intermediate features equal to the number of indices"
 
     print("All Intermediate Feature Returner Tests have passed successfully!")
+
+    from uniception.models.encoders.utils import profile_encoder
+
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+
+    # Profile the DINOv2 Encoder
+    dinov2_encoder = DINOv2Encoder(
+        name="dinov2_large", size="large", use_pytorch_sdpa=True, gradient_checkpointing=True
+    ).cuda()
+    dummy_input = ViTEncoderInput(image=torch.randn(24, 3, 560, 420).cuda(), data_norm_type="dinov2")
+
+    class Profiler:
+        @profile_encoder(num_warmup=3, num_runs=20, autocast_precision="bfloat16", use_compile=True, dynamic=False)
+        def run_fn(self):
+            output = dinov2_encoder(dummy_input)
+            return output
+
+    profiler = Profiler()
+    profiler.run_fn()

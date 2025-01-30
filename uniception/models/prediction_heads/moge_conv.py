@@ -202,6 +202,7 @@ class MoGeConvFeature(nn.Module):
             ),
         )
 
+    @torch.compile(fullgraph=True, options={}, dynamic=True)
     def forward(self, head_input: PredictionHeadLayeredInput) -> PixelTaskOutput:
         img_h, img_w = head_input.target_output_shape
         patch_h, patch_w = img_h // self.patch_size, img_w // self.patch_size
@@ -273,7 +274,7 @@ if __name__ == "__main__":
 
     # Define input shape
     image_shape = (560, 420)
-    batch_size = 6
+    batch_size = 10
     patch_size = 14
     patch_num = (image_shape[0] // patch_size, image_shape[1] // patch_size)
 
