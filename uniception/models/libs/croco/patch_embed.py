@@ -4,6 +4,7 @@
 # --------------------------------------------------------
 import torch
 import torch.nn as nn
+
 from uniception.models.libs.croco.blocks import to_2tuple
 
 torch.backends.cuda.matmul.allow_tf32 = True  # for gpu >= Ampere and pytorch >= 1.12

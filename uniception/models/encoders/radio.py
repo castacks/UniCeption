@@ -5,6 +5,7 @@ Encoder Class for RADIO (Nvidia)
 from typing import List, Optional, Tuple, Union
 
 import torch
+
 from uniception.models.encoders.base import UniCeptionViTEncoderBase, ViTEncoderInput, ViTEncoderOutput
 from uniception.models.utils.intermediate_feature_return import IntermediateFeatureReturner
 
@@ -47,8 +48,14 @@ class RADIOEncoder(UniCeptionViTEncoderBase):
 
         # Init the RADIO Encoder specific attributes
         self.model_version = model_version
-        self.enc_embed_dim = {"radio_v2.5-b": 768, "radio_v2.5-l": 1024, "radio_v2.5-h": 1280, "radio_v2.5-g": 1536, "e-radio_v2": 1536}[self.model_version]
-        
+        self.enc_embed_dim = {
+            "radio_v2.5-b": 768,
+            "radio_v2.5-l": 1024,
+            "radio_v2.5-h": 1280,
+            "radio_v2.5-g": 1536,
+            "e-radio_v2": 1536,
+        }[self.model_version]
+
         if self.model_version == "radio_v2.5-g":
             assert patch_size == 14, "Patch size must be 14 for RADIO v2.5-g"
         else:
@@ -236,7 +243,9 @@ class RADIOIntermediateFeatureReturner(RADIOEncoder, IntermediateFeatureReturner
 if __name__ == "__main__":
     # Init different versions of the RADIO Encoder
     for model_version in ["radio_v2.5-b", "radio_v2.5-l", "radio_v2.5-h", "radio_v2.5-g"]:
-        radio_encoder = RADIOEncoder(name="RADIOv2.5", model_version=model_version, patch_size=14 if "v2.5-g" in model_version else 16)
+        radio_encoder = RADIOEncoder(
+            name="RADIOv2.5", model_version=model_version, patch_size=14 if "v2.5-g" in model_version else 16
+        )
 
     # Init the E-RADIO Encoder
     eradio_input_shape = (512, 512)

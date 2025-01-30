@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 from torch import nn
+
 from uniception.models.encoders import ViTEncoderInput, encoder_factory
 from uniception.models.info_sharing.base import MultiViewTransformerInput
 from uniception.models.info_sharing.cross_attention_transformer import (
@@ -46,9 +47,9 @@ def interleave(tensor1, tensor2):
 
 
 CLASSNAME_TO_ADAPTOR_CLASS = {
-    "FlowWithConfidenceAdaptor": FlowWithConfidenceAdaptor, 
+    "FlowWithConfidenceAdaptor": FlowWithConfidenceAdaptor,
     "FlowAdaptor": FlowAdaptor,
-    "MaskAdaptor": MaskAdaptor
+    "MaskAdaptor": MaskAdaptor,
 }
 
 
@@ -283,7 +284,7 @@ class MatchAnythingModel(nn.Module):
             out2 = out2.features
 
         return out, out2
-    
+
     @torch.compiler.disable(recursive=False)
     def _encode_symmetrized(self, view1, view2):
         "Encode image pairs accounting for symmetrization, i.e., (a, b) and (b, a) always exist in the input"

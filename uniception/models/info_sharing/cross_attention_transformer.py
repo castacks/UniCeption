@@ -11,10 +11,11 @@ import torch
 import torch.nn as nn
 from jaxtyping import Float
 from torch import Tensor
+
 from uniception.models.info_sharing.base import (
-    UniCeptionInfoSharingBase,
     MultiViewTransformerInput,
     MultiViewTransformerOutput,
+    UniCeptionInfoSharingBase,
 )
 from uniception.models.utils.intermediate_feature_return import IntermediateFeatureReturner, feature_take_indices
 from uniception.models.utils.positional_encoding import PositionGetter
@@ -351,10 +352,7 @@ class MultiViewCrossAttentionTransformerIFR(MultiViewCrossAttentionTransformer, 
     def forward(
         self,
         model_input: MultiViewTransformerInput,
-    ) -> Union[
-        List[MultiViewTransformerOutput],
-        Tuple[MultiViewTransformerOutput, List[MultiViewTransformerOutput]],
-    ]:
+    ) -> Union[List[MultiViewTransformerOutput], Tuple[MultiViewTransformerOutput, List[MultiViewTransformerOutput]],]:
         """
         Forward interface for the Multi-View Cross-Attention Transformer with Intermediate Feature Return.
 

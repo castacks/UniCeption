@@ -13,6 +13,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from jaxtyping import Float
 from torch import Tensor
+
 from uniception.models.libs.croco.dpt_block import make_fusion_block, make_scratch, pair
 from uniception.models.prediction_heads.base import PixelTaskOutput, PredictionHeadLayeredInput
 
@@ -349,33 +350,105 @@ class DPTSegmentationProcessor(nn.Module):
 
 
 if __name__ == "__main__":
+    import time
+
+    import numpy as np
+    import torch.cuda.profiler as profiler
+
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+
+    # Ensure the model is on GPU
+    num_runs = 20
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Instantiate the model and move to GPU
     dpt_feature_output = DPTFeature(
         patch_size=16,
         main_tasks=("rgb",),
         hooks=[2, 5, 8, 11],
-        input_feature_dims=[123, 456, 789, 1011],
+        input_feature_dims=[1024, 768, 768, 768],
         layer_dims=[96, 192, 384, 768],
         feature_dim=256,
         use_bn=False,
         output_width_ratio=1,
-    )
+    ).to(device)
 
-    image_shape = (448, 224)
+    postprocess = DPTRegressionProcessor(input_feature_dim=256, output_dim=3).to(device)
+
+    # Define input shape
+    image_shape = (560, 420)
+    batch_size = 6
     patch_size = 14
 
     patch_num = (image_shape[0] // patch_size, image_shape[1] // patch_size)
 
-    input_feats = [torch.randn(1, 768, *patch_num) for _ in range(12)]
+    input_feats = [None for _ in range(12)]
 
-    input_feats[2] = torch.randn(1, 123, *patch_num)
-    input_feats[5] = torch.randn(1, 456, *patch_num)
-    input_feats[8] = torch.randn(1, 789, *patch_num)
-    input_feats[11] = torch.randn(1, 1011, *patch_num)
+    input_feats[2] = torch.randn(batch_size, 1024, *patch_num, device=device, requires_grad=True)
+    input_feats[5] = torch.randn(batch_size, 768, *patch_num, device=device, requires_grad=True)
+    input_feats[8] = torch.randn(batch_size, 768, *patch_num, device=device, requires_grad=True)
+    input_feats[11] = torch.randn(batch_size, 768, *patch_num, device=device, requires_grad=True)
 
-    output = dpt_feature_output(PredictionHeadLayeredInput(list_features=input_feats, target_output_shape=image_shape))
+    # Warm-up to stabilize GPU performance
+    for _ in range(3):
+        output = dpt_feature_output(
+            PredictionHeadLayeredInput(list_features=input_feats, target_output_shape=image_shape)
+        )
+        output2 = postprocess(output)
+        torch.cuda.synchronize()
 
-    postprocess = DPTSegmentationProcessor(input_feature_dim=256, output_dim=3)
+    # Clear memory cache
+    torch.cuda.empty_cache()
 
-    dpt_processor_input = DPTFeatureInput(
-        features_upsampled_8x=output.features_upsampled_8x, target_output_shape=image_shape
-    )
+    # Lists to store results
+    forward_times = []
+    backward_times = []
+    memory_usages = []
+
+    for _ in range(num_runs):
+        # Start measuring time
+        start_event = torch.cuda.Event(enable_timing=True)
+        end_event = torch.cuda.Event(enable_timing=True)
+
+        # Reset memory stats
+        torch.cuda.reset_peak_memory_stats()
+        memory_before = torch.cuda.max_memory_allocated(device)
+
+        # Forward pass
+        start_event.record()
+        output = dpt_feature_output(
+            PredictionHeadLayeredInput(list_features=input_feats, target_output_shape=image_shape)
+        )
+        output2 = postprocess(output)
+        end_event.record()
+        torch.cuda.synchronize()
+        forward_time = start_event.elapsed_time(end_event)  # Time in milliseconds
+
+        # Backward pass
+        start_event.record()
+        output = dpt_feature_output(
+            PredictionHeadLayeredInput(list_features=input_feats, target_output_shape=image_shape)
+        )
+        output2 = postprocess(output)
+        output2.decoded_channels.sum().backward()
+        end_event.record()
+        torch.cuda.synchronize()
+        backward_time = start_event.elapsed_time(end_event)
+
+        # Memory usage
+        memory_after = torch.cuda.max_memory_allocated(device)
+        peak_memory = memory_after - memory_before
+
+        forward_times.append(forward_time)
+        backward_times.append(backward_time)
+        memory_usages.append(peak_memory / 1e6)  # Convert to MB
+
+    # Compute mean and standard deviation
+    fwd_mean, fwd_std = np.mean(forward_times), np.std(forward_times)
+    bwd_mean, bwd_std = np.mean(backward_times), np.std(backward_times)
+    mem_mean, mem_std = np.mean(memory_usages), np.std(memory_usages)
+
+    print(f"Forward Pass Time: {fwd_mean:.2f} ± {fwd_std:.2f} ms")
+    print(f"Backward Pass Time: {bwd_mean:.2f} ± {bwd_std:.2f} ms")
+    print(f"Peak GPU Memory Usage: {mem_mean:.2f} ± {mem_std:.2f} MB")

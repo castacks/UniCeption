@@ -13,9 +13,14 @@ from jaxtyping import Float
 from torch import Tensor
 
 from uniception.models.info_sharing.base import InfoSharingInput, InfoSharingOutput, UniCeptionInfoSharingBase
+from uniception.models.info_sharing.cross_attention_transformer import (
+    MultiViewTransformerInput,
+    MultiViewTransformerOutput,
+    PositionGetter,
+)
 from uniception.models.utils.intermediate_feature_return import IntermediateFeatureReturner, feature_take_indices
-from uniception.models.utils.transformer_blocks import CrossAttentionBlock, Mlp, DiffCrossAttentionBlock
-from uniception.models.info_sharing.cross_attention_transformer import PositionGetter, MultiViewTransformerInput, MultiViewTransformerOutput
+from uniception.models.utils.transformer_blocks import CrossAttentionBlock, DiffCrossAttentionBlock, Mlp
+
 
 class DifferentialMultiViewCrossAttentionTransformer(UniCeptionInfoSharingBase):
     "UniCeption Multi-View Cross-Attention Transformer for information sharing across image features from different views."
@@ -249,7 +254,9 @@ class DifferentialMultiViewCrossAttentionTransformer(UniCeptionInfoSharingBase):
         return MultiViewTransformerOutput(features=output_multi_view_features)
 
 
-class DifferentialMultiViewCrossAttentionTransformerIFR(DifferentialMultiViewCrossAttentionTransformer, IntermediateFeatureReturner):
+class DifferentialMultiViewCrossAttentionTransformerIFR(
+    DifferentialMultiViewCrossAttentionTransformer, IntermediateFeatureReturner
+):
     "Intermediate Feature Returner for UniCeption Multi-View Cross-Attention Transformer"
 
     def __init__(
@@ -347,10 +354,7 @@ class DifferentialMultiViewCrossAttentionTransformerIFR(DifferentialMultiViewCro
     def forward(
         self,
         model_input: MultiViewTransformerInput,
-    ) -> Union[
-        List[MultiViewTransformerOutput],
-        Tuple[MultiViewTransformerOutput, List[MultiViewTransformerOutput]],
-    ]:
+    ) -> Union[List[MultiViewTransformerOutput], Tuple[MultiViewTransformerOutput, List[MultiViewTransformerOutput]],]:
         """
         Forward interface for the Multi-View Cross-Attention Transformer with Intermediate Feature Return.
 
@@ -476,7 +480,9 @@ if __name__ == "__main__":
     # Init multi-view cross-attention transformer with no custom positional encoding and run a forward pass
     for num_views in [2, 3, 4]:
         print(f"Testing MultiViewCrossAttentionTransformer with {num_views} views ...")
-        model = DifferentialMultiViewCrossAttentionTransformer(name="MV-DCAT", input_embed_dim=1024, num_views=num_views)
+        model = DifferentialMultiViewCrossAttentionTransformer(
+            name="MV-DCAT", input_embed_dim=1024, num_views=num_views
+        )
         model_input = [torch.rand(1, 1024, 14, 14) for _ in range(num_views)]
         model_input = MultiViewTransformerInput(features=model_input)
         model_output = model(model_input)
@@ -485,7 +491,9 @@ if __name__ == "__main__":
 
     # Init multi-view cross-attention transformer with custom positional encoding and run a forward pass
     for num_views in [2, 3, 4]:
-        print(f"Testing Differential MultiViewCrossAttentionTransformer with {num_views} views and custom positional encoding ...")
+        print(
+            f"Testing Differential MultiViewCrossAttentionTransformer with {num_views} views and custom positional encoding ..."
+        )
         model = DifferentialMultiViewCrossAttentionTransformer(
             name="MV-DCAT",
             input_embed_dim=1024,
