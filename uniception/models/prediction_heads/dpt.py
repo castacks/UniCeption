@@ -13,6 +13,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from jaxtyping import Float
 from torch import Tensor
+import torch.utils
+from torch.utils.checkpoint import checkpoint
 
 from uniception.models.libs.croco.dpt_block import make_fusion_block, make_scratch, pair
 from uniception.models.prediction_heads.base import PixelTaskOutput, PredictionHeadLayeredInput
@@ -49,6 +51,7 @@ class DPTFeature(nn.Module):
         use_bn: bool = False,
         output_width_ratio=1,
         pretrained_checkpoint_path: str = None,
+        checkpoint_gradient: bool = False,
         *args,
         **kwargs,
     ):
@@ -58,6 +61,7 @@ class DPTFeature(nn.Module):
         self.hooks = hooks
         self.layer_dims = layer_dims
         self.feature_dim = feature_dim
+        self.checkpoint_gradient = checkpoint_gradient
 
         if isinstance(input_feature_dims, int):
             input_feature_dims = 4 * [input_feature_dims]
@@ -166,8 +170,16 @@ class DPTFeature(nn.Module):
             ),
         )
 
-        self.act_postprocess = nn.ModuleList(
-            [act_1_postprocess, act_2_postprocess, act_3_postprocess, act_4_postprocess]
+        act_postprocess = [act_1_postprocess, act_2_postprocess, act_3_postprocess, act_4_postprocess]
+        
+        self.input_process = nn.ModuleList(
+            [
+                nn.Sequential(
+                    act_,
+                    layer_rn_
+                )
+                for act_, layer_rn_ in zip(act_postprocess, self.scratch.layer_rn)
+            ]
         )
 
     def forward(self, dpt_input: PredictionHeadLayeredInput) -> DPTFeatureInput:
@@ -193,18 +205,30 @@ class DPTFeature(nn.Module):
                 layered_feats[hook].shape[1] == self.input_feature_dims[hook_idx]
             ), f"Input feature dimension mismatch at hook {hook}. Expected BCHW"
 
-        # Hook decoder onto 4 layers from specified ViT layers
-        layers = [layered_feats[hook] for hook in self.hooks]
+        if not self.checkpoint_gradient:
+            # Hook decoder onto 4 layers from specified ViT layers
+            layers = [layered_feats[hook] for hook in self.hooks]
 
-        layers = [self.act_postprocess[idx](l) for idx, l in enumerate(layers)]
-        # Project layers to chosen feature dim
-        layers = [self.scratch.layer_rn[idx](l) for idx, l in enumerate(layers)]
+            # layers = [self.act_postprocess[idx](l) for idx, l in enumerate(layers)]
+            # # Project layers to chosen feature dim
+            # layers = [self.scratch.layer_rn[idx](l) for idx, l in enumerate(layers)]
+            layers = [self.input_process[idx](l) for idx, l in enumerate(layers)]
 
-        # Fuse layers using refinement stages
-        path_4 = self.scratch.refinenet4(layers[3])[:, :, : layers[2].shape[2], : layers[2].shape[3]]
-        path_3 = self.scratch.refinenet3(path_4, layers[2])
-        path_2 = self.scratch.refinenet2(path_3, layers[1])
-        feature_upsampled_8x = self.scratch.refinenet1(path_2, layers[0])
+            # Fuse layers using refinement stages
+            path_4 = self.scratch.refinenet4(layers[3])[:, :, : layers[2].shape[2], : layers[2].shape[3]]
+            path_3 = self.scratch.refinenet3(path_4, layers[2])
+            path_2 = self.scratch.refinenet2(path_3, layers[1])
+            feature_upsampled_8x = self.scratch.refinenet1(path_2, layers[0])
+        else:
+            # Hook decoder onto 4 layers from specified ViT layers
+            layers = [layered_feats[hook] for hook in self.hooks]
+
+            layers = [checkpoint(self.input_process[idx], l, use_reentrant=False) for idx, l in enumerate(layers)]
+
+            path_4 = checkpoint(self.scratch.refinenet4, layers[3], use_reentrant=False)[:, :, : layers[2].shape[2], : layers[2].shape[3]]
+            path_3 = checkpoint(self.scratch.refinenet3, path_4, layers[2], use_reentrant=False)
+            path_2 = checkpoint(self.scratch.refinenet2, path_3, layers[1], use_reentrant=False)
+            feature_upsampled_8x = checkpoint(self.scratch.refinenet1, path_2, layers[0], use_reentrant=False)
 
         return DPTFeatureInput(
             features_upsampled_8x=feature_upsampled_8x, target_output_shape=dpt_input.target_output_shape
@@ -221,6 +245,7 @@ class DPTRegressionProcessor(nn.Module):
         output_dim: int,
         hidden_dims: Optional[List[int]] = None,  # when not given, use input_feature_dim//2
         pretrained_checkpoint_path: str = None,
+        checkpoint_gradient: bool = False,
         *args,
         **kwargs,
     ):
@@ -242,6 +267,8 @@ class DPTRegressionProcessor(nn.Module):
             hidden_dims = [input_feature_dim // 2] * 2
         else:
             assert isinstance(hidden_dims, List) and len(hidden_dims) == 2
+        
+        self.checkpoint_gradient = checkpoint_gradient
 
         self.conv1 = nn.Conv2d(input_feature_dim, hidden_dims[0], kernel_size=3, stride=1, padding=1)
         # interpolate is dependent on target output size
@@ -274,9 +301,14 @@ class DPTRegressionProcessor(nn.Module):
         x = dpt_processor_input.features_upsampled_8x
         output_shape = dpt_processor_input.target_output_shape
 
-        x = self.conv1(x)
-        x = F.interpolate(x, size=output_shape, mode="bilinear", align_corners=True)
-        x = self.conv2(x)
+        if not self.checkpoint_gradient:
+            x = self.conv1(x)
+            x = F.interpolate(x, size=output_shape, mode="bilinear", align_corners=True)
+            x = self.conv2(x)
+        else:
+            x = self.conv1(x)
+            x = F.interpolate(x, size=output_shape, mode="bilinear", align_corners=True)
+            x = checkpoint(self.conv2, x, use_reentrant=False)
 
         return PixelTaskOutput(decoded_channels=x)
 
@@ -372,13 +404,14 @@ if __name__ == "__main__":
         feature_dim=256,
         use_bn=False,
         output_width_ratio=1,
+        checkpoint_gradient=True,
     ).to(device)
 
-    postprocess = DPTRegressionProcessor(input_feature_dim=256, output_dim=3).to(device)
+    postprocess = DPTRegressionProcessor(input_feature_dim=256, output_dim=3, checkpoint_gradient=True).to(device)
 
     # Define input shape
     image_shape = (560, 420)
-    batch_size = 6
+    batch_size = 12
     patch_size = 14
 
     patch_num = (image_shape[0] // patch_size, image_shape[1] // patch_size)
