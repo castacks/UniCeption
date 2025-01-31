@@ -442,23 +442,23 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
             multi_view_positions = [None] * num_of_views
 
         # Add positional encoding for reference view (idx 0)
-        # ref_view_pe = self.view_pos_table[0].clone().detach()
-        # ref_view_pe = ref_view_pe.reshape((1, 1, self.dim))
-        # ref_view_pe = ref_view_pe.repeat(batch_size, num_of_tokens_per_view, 1)
+        ref_view_pe = self.view_pos_table[0].clone().detach()
+        ref_view_pe = ref_view_pe.reshape((1, 1, self.dim))
+        ref_view_pe = ref_view_pe.repeat(batch_size, num_of_tokens_per_view, 1)
         ref_view_features = multi_view_features[:, :num_of_tokens_per_view, :]
-        # ref_view_features = ref_view_features + ref_view_pe
+        ref_view_features = ref_view_features + ref_view_pe
 
         # Add positional encoding for non-reference views (sequential indices starting from idx 1 or random indices which are uniformly sampled)
-        # if self.use_rand_idx_pe_for_non_reference_views:
-        #     non_ref_view_pe_indices = torch.randint(low=1, high=self.max_num_views, size=(num_of_views - 1,))
-        # else:
-        #     non_ref_view_pe_indices = torch.arange(1, num_of_views)
-        # non_ref_view_pe = self.view_pos_table[non_ref_view_pe_indices].clone().detach()
-        # non_ref_view_pe = non_ref_view_pe.reshape((1, num_of_views - 1, self.dim))
-        # non_ref_view_pe = non_ref_view_pe.repeat_interleave(num_of_tokens_per_view, dim=1)
-        # non_ref_view_pe = non_ref_view_pe.repeat(batch_size, 1, 1)
+        if self.use_rand_idx_pe_for_non_reference_views:
+            non_ref_view_pe_indices = torch.randint(low=1, high=self.max_num_views, size=(num_of_views - 1,))
+        else:
+            non_ref_view_pe_indices = torch.arange(1, num_of_views)
+        non_ref_view_pe = self.view_pos_table[non_ref_view_pe_indices].clone().detach()
+        non_ref_view_pe = non_ref_view_pe.reshape((1, num_of_views - 1, self.dim))
+        non_ref_view_pe = non_ref_view_pe.repeat_interleave(num_of_tokens_per_view, dim=1)
+        non_ref_view_pe = non_ref_view_pe.repeat(batch_size, 1, 1)
         non_ref_view_features = multi_view_features[:, num_of_tokens_per_view:, :]
-        # non_ref_view_features = non_ref_view_features + non_ref_view_pe
+        non_ref_view_features = non_ref_view_features + non_ref_view_pe
 
         # Concatenate the reference and non-reference view features
         multi_view_features = torch.cat([ref_view_features, non_ref_view_features], dim=1)
