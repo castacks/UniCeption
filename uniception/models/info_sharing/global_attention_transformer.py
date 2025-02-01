@@ -485,7 +485,7 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
             # Split the intermediate multi-view features into separate views
             intermediate_multi_view_features[idx] = intermediate_multi_view_features[idx].split(1, dim=1)
             intermediate_multi_view_features[idx] = [
-                intermediate_view_features.squeeze(dim=1)
+                intermediate_view_features.clone().squeeze(dim=1)
                 for intermediate_view_features in intermediate_multi_view_features[idx]
             ]
             intermediate_multi_view_features[idx] = MultiViewTransformerOutput(
