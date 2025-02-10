@@ -33,6 +33,15 @@ class PixelTaskOutput:
 
 
 @dataclass
+class SummaryTaskOutput:
+    """
+    SummaryTaskOutput have a single latent output for each image in BC format.
+    """
+
+    decoded_channels: Float[Tensor, "batch_size output_channels"]
+
+
+@dataclass
 class AdaptorInput:
     adaptor_feature: Float[Tensor, "batch_size sliced_channels height width"]
     output_shape_hw: Tuple[int, int]
