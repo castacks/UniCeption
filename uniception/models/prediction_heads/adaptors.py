@@ -1030,6 +1030,59 @@ class PointMapWithConfidenceAdaptor(ValueWithConfidenceAdaptor):
         super().__init__(name, value_adaptor=pointmap_adaptor, confidence_adaptor=confidence_adaptor, *args, **kwargs)
 
 
+class RayDirectionsPlusDepthwithConfidenceAdaptor(ValueWithConfidenceAdaptor):
+    def __init__(
+        self,
+        name: str,
+        # Ray directions adaptor
+        ray_directions_mode: str,
+        ray_directions_normalize_to_unit_sphere: bool,
+        ray_directions_normalize_to_unit_image_plane: bool,
+        ray_directions_vmin: float,
+        ray_directions_vmax: float,
+        ray_directions_clamp_min_of_z_dir: bool,
+        ray_directions_z_dir_min: float,
+        # Depth adaptor
+        depth_mode: str,
+        depth_vmin: float,
+        depth_vmax: float,
+        # Confidence adaptor
+        confidence_type: str,
+        confidence_vmin: float,
+        confidence_vmax: float,
+        *args,
+        **kwargs,
+    ):
+        """
+        Adaptor for the RayDirections + Depth with Confidence head in UniCeption.
+        """
+        ray_directions_plus_depth_adaptor = RayDirectionsPlusDepthAdaptor(
+            name=f"{name}",
+            ray_directions_mode=ray_directions_mode,
+            ray_directions_normalize_to_unit_sphere=ray_directions_normalize_to_unit_sphere,
+            ray_directions_normalize_to_unit_image_plane=ray_directions_normalize_to_unit_image_plane,
+            ray_directions_vmin=ray_directions_vmin,
+            ray_directions_vmax=ray_directions_vmax,
+            ray_directions_clamp_min_of_z_dir=ray_directions_clamp_min_of_z_dir,
+            ray_directions_z_dir_min=ray_directions_z_dir_min,
+            depth_mode=depth_mode,
+            depth_vmin=depth_vmin,
+            depth_vmax=depth_vmax,
+        )
+
+        confidence_adaptor = ConfidenceAdaptor(
+            name=f"{name}_confidence", confidence_type=confidence_type, vmin=confidence_vmin, vmax=confidence_vmax
+        )
+
+        super().__init__(
+            name,
+            value_adaptor=ray_directions_plus_depth_adaptor,
+            confidence_adaptor=confidence_adaptor,
+            *args,
+            **kwargs,
+        )
+
+
 class RayMapPlusDepthwithConfidenceAdaptor(ValueWithConfidenceAdaptor):
     def __init__(
         self,
