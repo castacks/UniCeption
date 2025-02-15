@@ -293,7 +293,10 @@ class MatchAnythingModel(nn.Module):
         img2 = view2["img"]
         if is_symmetrized(view1, view2):
             # Computing half of forward pass'
-            feat1, feat2 = self._encode_image_pairs(img1[::2], img2[::2], data_norm_type=view1["data_norm_type"])
+            # modified in conjunction with UFM for not copying the images again.
+            # used to be: feat1, feat2 = self._encode_image_pairs(img1[::2], img2[::2], data_norm_type=view1["data_norm_type"])
+            # be very carefult with this!!!
+            feat1, feat2 = self._encode_image_pairs(img1, img2, data_norm_type=view1["data_norm_type"])
             feat1, feat2 = interleave(feat1, feat2)
         else:
             feat1, feat2 = self._encode_image_pairs(img1, img2, data_norm_type=view1["data_norm_type"])
