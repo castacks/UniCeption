@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 from torch import nn
+
 from uniception.models.encoders import ViTEncoderInput, encoder_factory
 from uniception.models.info_sharing.base import MultiViewTransformerInput
 from uniception.models.info_sharing.cross_attention_transformer import (

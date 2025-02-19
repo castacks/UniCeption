@@ -5,6 +5,7 @@ Encoder Class for DINOv2
 from typing import List, Optional, Union
 
 import torch
+
 from uniception.models.encoders.base import UniCeptionViTEncoderBase, ViTEncoderInput, ViTEncoderOutput
 from uniception.models.utils.intermediate_feature_return import IntermediateFeatureReturner
 

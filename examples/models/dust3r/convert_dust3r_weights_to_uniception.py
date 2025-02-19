@@ -11,6 +11,7 @@ import os
 
 import torch
 from torch import nn
+
 from uniception.models.info_sharing.cross_attention_transformer import MultiViewCrossAttentionTransformerIFR
 from uniception.models.prediction_heads.dpt import DPTFeature, DPTRegressionProcessor
 from uniception.models.prediction_heads.linear import LinearFeature

@@ -74,6 +74,24 @@ class MultiViewTransformerOutput(InfoSharingOutput):
     features: List[Float[Tensor, "batch transformer_embed_dim feat_height feat_width"]]
 
 
+@dataclass
+class MultiSetTransformerInput(InfoSharingInput):
+    """
+    Input class for Multi-Set Transformer.
+    """
+
+    features: List[Float[Tensor, "batch input_embed_dim num_tokens"]]
+
+
+@dataclass
+class MultiSetTransformerOutput(InfoSharingOutput):
+    """
+    Output class for Multi-Set Transformer.
+    """
+
+    features: List[Float[Tensor, "batch transformer_embed_dim num_tokens"]]
+
+
 if __name__ == "__main__":
     dummy_model = UniCeptionInfoSharingBase(name="dummy")
     print("Dummy Base InfoSharing model created successfully!")

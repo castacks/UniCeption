@@ -12,7 +12,10 @@ import torch
 import torch.nn as nn
 from jaxtyping import Float
 from torch import Tensor
+
 from uniception.models.info_sharing.base import (
+    MultiSetTransformerInput,
+    MultiSetTransformerOutput,
     MultiViewTransformerInput,
     MultiViewTransformerOutput,
     UniCeptionInfoSharingBase,
@@ -508,6 +511,241 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
         return output_multi_view_features, intermediate_multi_view_features
 
 
+class GlobalAttentionTransformer(UniCeptionInfoSharingBase):
+    "UniCeption Global-Attention Transformer for information sharing across differetn set of features."
+
+    def __init__(
+        self,
+        name: str,
+        input_embed_dim: int,
+        max_num_sets: int,
+        use_rand_idx_pe_for_non_reference_sets: bool,
+        size: Optional[str] = None,
+        depth: int = 12,
+        dim: int = 768,
+        num_heads: int = 12,
+        mlp_ratio: float = 4.0,
+        qkv_bias: bool = True,
+        qk_norm: bool = False,
+        proj_drop: float = 0.0,
+        attn_drop: float = 0.0,
+        init_values: Optional[float] = None,
+        drop_path: float = 0.0,
+        act_layer: Type[nn.Module] = nn.GELU,
+        norm_layer: Union[Type[nn.Module], Callable[..., nn.Module]] = partial(nn.LayerNorm, eps=1e-6),
+        mlp_layer: Type[nn.Module] = Mlp,
+        pretrained_checkpoint_path: Optional[str] = None,
+        *args,
+        **kwargs,
+    ):
+        """
+        Initialize the Global-Attention Transformer for information sharing across features from different sets.
+
+        Args:
+            input_embed_dim (int): Dimension of input embeddings.
+            max_num_sets (int): Maximum number of sets for positional encoding.
+            use_rand_idx_pe_for_non_reference_sets (bool): Whether to use random index positional encoding for non-reference sets.
+            size (str): String to indicate interpretable size of the transformer (for e.g., base, large, ...). (default: None)
+            depth (int): Number of transformer layers. (default: 12, base size)
+            dim (int): Dimension of the transformer. (default: 768, base size)
+            num_heads (int): Number of attention heads. (default: 12, base size)
+            mlp_ratio (float): Ratio of hidden to input dimension in MLP (default: 4.)
+            qkv_bias (bool): Whether to include bias in qkv projection (default: True)
+            qk_norm (bool): Whether to normalize q and k (default: False)
+            proj_drop (float): Dropout rate for output (default: 0.)
+            attn_drop (float): Dropout rate for attention weights (default: 0.)
+            init_values (float): Initial value for LayerScale gamma (default: None)
+            drop_path (float): Dropout rate for stochastic depth (default: 0.)
+            act_layer (nn.Module): Activation layer (default: nn.GELU)
+            norm_layer (nn.Module): Normalization layer (default: nn.LayerNorm)
+            mlp_layer (nn.Module): MLP layer (default: Mlp)
+            pretrained_checkpoint_path (str, optional): Path to the pretrained checkpoint. (default: None)
+        """
+        # Initialize the base class
+        super().__init__(name=name, size=size, *args, **kwargs)
+
+        # Initialize the specific attributes of the transformer
+        self.input_embed_dim = input_embed_dim
+        self.max_num_sets = max_num_sets
+        self.use_rand_idx_pe_for_non_reference_sets = use_rand_idx_pe_for_non_reference_sets
+        self.depth = depth
+        self.dim = dim
+        self.num_heads = num_heads
+        self.mlp_ratio = mlp_ratio
+        self.qkv_bias = qkv_bias
+        self.qk_norm = qk_norm
+        self.proj_drop = proj_drop
+        self.attn_drop = attn_drop
+        self.init_values = init_values
+        self.drop_path = drop_path
+        self.act_layer = act_layer
+        self.norm_layer = norm_layer
+        self.mlp_layer = mlp_layer
+        self.pretrained_checkpoint_path = pretrained_checkpoint_path
+
+        # Initialize the projection layer for input embeddings
+        if self.input_embed_dim != self.dim:
+            self.proj_embed = nn.Linear(self.input_embed_dim, self.dim, bias=True)
+        else:
+            self.proj_embed = nn.Identity()
+
+        # Initialize the self-attention blocks which ingest all sets at once
+        self.self_attention_blocks = nn.ModuleList(
+            [
+                SelfAttentionBlock(
+                    dim=self.dim,
+                    num_heads=self.num_heads,
+                    mlp_ratio=self.mlp_ratio,
+                    qkv_bias=self.qkv_bias,
+                    qk_norm=self.qk_norm,
+                    proj_drop=self.proj_drop,
+                    attn_drop=self.attn_drop,
+                    init_values=self.init_values,
+                    drop_path=self.drop_path,
+                    act_layer=self.act_layer,
+                    norm_layer=self.norm_layer,
+                    mlp_layer=self.mlp_layer,
+                )
+                for _ in range(self.depth)
+            ]
+        )
+
+        # Initialize the final normalization layer
+        self.norm = self.norm_layer(self.dim)
+
+        # Initialize the positional encoding table for the different sets
+        self.register_buffer(
+            "set_pos_table",
+            self._get_sinusoid_encoding_table(self.max_num_sets, self.dim, 10000),
+        )
+
+        # Initialize random weights
+        self.initialize_weights()
+
+        # Load pretrained weights if provided
+        if self.pretrained_checkpoint_path is not None:
+            print(f"Loading pretrained global-attention transformer weights from {self.pretrained_checkpoint_path} ...")
+            ckpt = torch.load(self.pretrained_checkpoint_path, weights_only=False)
+            print(self.load_state_dict(ckpt["model"]))
+
+    def _get_sinusoid_encoding_table(self, n_position, d_hid, base):
+        "Sinusoid position encoding table"
+
+        def get_position_angle_vec(position):
+            return [position / np.power(base, 2 * (hid_j // 2) / d_hid) for hid_j in range(d_hid)]
+
+        sinusoid_table = np.array([get_position_angle_vec(pos_i) for pos_i in range(n_position)])
+        sinusoid_table[:, 0::2] = np.sin(sinusoid_table[:, 0::2])
+        sinusoid_table[:, 1::2] = np.cos(sinusoid_table[:, 1::2])
+
+        return torch.FloatTensor(sinusoid_table)
+
+    def initialize_weights(self):
+        "Initialize weights of the transformer."
+        # Linears and layer norms
+        self.apply(self._init_weights)
+
+    def _init_weights(self, m):
+        "Initialize the transformer linear and layer norm weights."
+        if isinstance(m, nn.Linear):
+            # We use xavier_uniform following official JAX ViT:
+            torch.nn.init.xavier_uniform_(m.weight)
+            if isinstance(m, nn.Linear) and m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+        elif isinstance(m, nn.LayerNorm):
+            nn.init.constant_(m.bias, 0)
+            nn.init.constant_(m.weight, 1.0)
+
+    def forward(
+        self,
+        model_input: MultiSetTransformerInput,
+    ) -> MultiSetTransformerOutput:
+        """
+        Forward interface for the Multi-Set Global-Attention Transformer.
+
+        Args:
+            model_input (MultiSetTransformerInput): Input to the model.
+                Expects the features to be a list of size (batch, input_embed_dim, num_tokens),
+                where each entry corresponds to a different set of tokens and
+                the number of tokens can be different for each set.
+
+        Returns:
+            MultiSetTransformerOutput: Output of the model post information sharing.
+        """
+        # Check that the number of sets matches the input and the features are of expected shape
+        assert (
+            len(model_input.features) <= self.max_num_sets
+        ), f"Expected less than {self.max_num_sets} sets, got {len(model_input.features)}"
+        assert all(
+            set_features.shape[1] == self.input_embed_dim for set_features in model_input.features
+        ), f"All sets must have input dimension {self.input_embed_dim}"
+        assert all(
+            set_features.ndim == 3 for set_features in model_input.features
+        ), "All sets must have 3 dimensions (N, C, T)"
+
+        # Initialize the multi-set features from the model input and number of sets for current input
+        multi_set_features = model_input.features
+        num_of_sets = len(multi_set_features)
+        batch_size, _, _ = multi_set_features[0].shape
+        num_of_tokens_per_set = [set_features.shape[2] for set_features in multi_set_features]
+
+        # Permute the multi-set features from (N, C, T) to (N, T, C)
+        multi_set_features = [set_features.permute(0, 2, 1).contiguous() for set_features in multi_set_features]
+
+        # Stack the multi-set features along the number of tokens dimension
+        multi_set_features = torch.cat(multi_set_features, dim=1)
+
+        # Project input features to the transformer dimension
+        multi_set_features = self.proj_embed(multi_set_features)
+
+        # Create dummy patch positions for each set
+        multi_set_positions = [None] * num_of_sets
+
+        # Add positional encoding for reference set (idx 0)
+        ref_set_pe = self.set_pos_table[0].clone().detach()
+        ref_set_pe = ref_set_pe.reshape((1, 1, self.dim))
+        ref_set_pe = ref_set_pe.repeat(batch_size, num_of_tokens_per_set[0], 1)
+        ref_set_features = multi_set_features[:, : num_of_tokens_per_set[0], :]
+        ref_set_features = ref_set_features + ref_set_pe
+
+        # Add positional encoding for non-reference sets (sequential indices starting from idx 1 or random indices which are uniformly sampled)
+        if self.use_rand_idx_pe_for_non_reference_sets:
+            non_ref_set_pe_indices = torch.randint(low=1, high=self.max_num_sets, size=(num_of_sets - 1,))
+        else:
+            non_ref_set_pe_indices = torch.arange(1, num_of_sets)
+        non_ref_set_pe_list = []
+        for non_ref_set_idx in range(1, num_of_sets):
+            non_ref_set_pe_for_idx = self.set_pos_table[non_ref_set_pe_indices[non_ref_set_idx - 1]].clone().detach()
+            non_ref_set_pe_for_idx = non_ref_set_pe_for_idx.reshape((1, 1, self.dim))
+            non_ref_set_pe_for_idx = non_ref_set_pe_for_idx.repeat(
+                batch_size, num_of_tokens_per_set[non_ref_set_idx], 1
+            )
+            non_ref_set_pe_list.append(non_ref_set_pe_for_idx)
+        non_ref_set_pe = torch.cat(non_ref_set_pe_list, dim=1)
+        non_ref_set_features = multi_set_features[:, num_of_tokens_per_set[0] :, :]
+        non_ref_set_features = non_ref_set_features + non_ref_set_pe
+
+        # Concatenate the reference and non-reference set features
+        multi_set_features = torch.cat([ref_set_features, non_ref_set_features], dim=1)
+
+        # Loop over the depth of the transformer
+        for depth_idx in range(self.depth):
+            # Apply the self-attention block and update the multi-set features
+            multi_set_features = self.self_attention_blocks[depth_idx](multi_set_features, multi_set_positions)
+
+        # Normalize the output features
+        output_multi_set_features = self.norm(multi_set_features)
+
+        # Reshape the output multi-set features from (N, T, C) to (N, C, T)
+        output_multi_set_features = output_multi_set_features.permute(0, 2, 1).contiguous()
+
+        # Split the output multi-set features into separate sets using the list of number of tokens per set
+        output_multi_set_features = torch.split(output_multi_set_features, num_of_tokens_per_set, dim=2)
+
+        # Return the output multi-set features
+        return MultiSetTransformerOutput(features=output_multi_set_features)
+
+
 def dummy_positional_encoding(x, xpos):
     "Dummy function for positional encoding of tokens"
     x = x
@@ -627,3 +865,36 @@ if __name__ == "__main__":
         ), "Final features and intermediate features (last layer) must be same."
 
     print("All Intermediate Feature Returner Tests passed!")
+
+    # Init multi-set global-attention transformer and run a forward pass with different number of sets and set token sizes
+    import random
+
+    model = GlobalAttentionTransformer(
+        name="GAT", input_embed_dim=1024, max_num_sets=3, use_rand_idx_pe_for_non_reference_sets=False
+    )
+    for num_sets in [2, 3]:
+        print(f"Testing GlobalAttentionTransformer with {num_sets} sets ...")
+        model_input = [torch.rand(1, 1024, random.randint(256, 513)) for _ in range(num_sets)]
+        model_input = MultiSetTransformerInput(features=model_input)
+        model_output = model(model_input)
+        assert len(model_output.features) == num_sets
+        for feat, rand_input in zip(model_output.features, model_input.features):
+            assert feat.shape[2] == rand_input.shape[2]
+            assert feat.shape[1] == model.dim
+            assert feat.shape[0] == rand_input.shape[0]
+    # Random idx based positional encoding
+    model = GlobalAttentionTransformer(
+        name="GAT", input_embed_dim=1024, max_num_sets=1000, use_rand_idx_pe_for_non_reference_sets=True
+    )
+    for num_sets in [2, 3, 4]:
+        print(f"Testing GlobalAttentionTransformer with {num_sets} sets ...")
+        model_input = [torch.rand(1, 1024, random.randint(256, 513)) for _ in range(num_sets)]
+        model_input = MultiSetTransformerInput(features=model_input)
+        model_output = model(model_input)
+        assert len(model_output.features) == num_sets
+        for feat, rand_input in zip(model_output.features, model_input.features):
+            assert feat.shape[2] == rand_input.shape[2]
+            assert feat.shape[1] == model.dim
+            assert feat.shape[0] == rand_input.shape[0]
+
+    print("All Global Attention Transformer Tests passed!")

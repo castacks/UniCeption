@@ -11,6 +11,7 @@ import torch
 import torch.nn as nn
 from jaxtyping import Float
 from torch import Tensor
+
 from uniception.models.info_sharing.base import (
     MultiViewTransformerInput,
     MultiViewTransformerOutput,

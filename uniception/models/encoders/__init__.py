@@ -12,6 +12,7 @@ from uniception.models.encoders.base import (
     ViTEncoderOutput,
 )
 from uniception.models.encoders.croco import CroCoEncoder
+from uniception.models.encoders.dense_rep_encoder import DenseRepresentationEncoder
 from uniception.models.encoders.dinov2 import DINOv2Encoder
 from uniception.models.encoders.patch_embedder import PatchEmbedder
 from uniception.models.encoders.radio import RADIOEncoder
@@ -21,6 +22,10 @@ ENCODER_CONFIGS = {
     "croco": {
         "class": CroCoEncoder,
         "supported_models": ["CroCov2", "DUSt3R", "MASt3R"],
+    },
+    "dense_rep_encoder": {
+        "class": DenseRepresentationEncoder,
+        "supported_models": ["Dense-Representation-Encoder"],
     },
     "dinov2": {
         "class": DINOv2Encoder,
