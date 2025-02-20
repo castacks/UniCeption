@@ -11,7 +11,6 @@ import copy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 from uniception.models.prediction_heads.base import PredictionHeadInput, SummaryTaskOutput
 
 

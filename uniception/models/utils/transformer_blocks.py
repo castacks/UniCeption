@@ -13,7 +13,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.jit import Final
-
 from uniception.models.utils.config import use_fused_attn
 
 torch.backends.cuda.matmul.allow_tf32 = True

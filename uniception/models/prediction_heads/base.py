@@ -83,6 +83,13 @@ class RegressionWithConfidenceAdaptorOutput:
     confidence: Float[Tensor, "batch_size 1 height width"]
 
 
+@dataclass
+class RegressionWithMaskAdaptorOutput:
+    value: Float[Tensor, "batch_size sliced_channels height width"]
+    logits: Float[Tensor, "batch_size 1 height width"]
+    mask: Float[Tensor, "batch_size 1 height width"]
+
+
 class UniCeptionPredictionHeadBase(nn.Module):
     def __init__(
         self,

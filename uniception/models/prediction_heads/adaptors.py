@@ -9,13 +9,13 @@ from typing import List, Tuple, Union
 import numpy as np
 import torch
 import torch.nn as nn
-
 from uniception.models.prediction_heads import (
     AdaptorInput,
     Covariance2DAdaptorOutput,
     MaskAdaptorOutput,
     RegressionAdaptorOutput,
     RegressionWithConfidenceAdaptorOutput,
+    RegressionWithMaskAdaptorOutput,
     UniCeptionAdaptorBase,
 )
 
@@ -1204,4 +1204,217 @@ class RayMapPlusDepthPlusQuatswithConfidenceAdaptor(ValueWithConfidenceAdaptor):
             confidence_adaptor=confidence_adaptor,
             *args,
             **kwargs,
+        )
+
+
+class ValueWithMaskAdaptor(UniCeptionAdaptorBase):
+    def __init__(
+        self,
+        name: str,
+        value_adaptor: UniCeptionAdaptorBase,
+        mask_adaptor: UniCeptionAdaptorBase,
+        *args,
+        **kwargs,
+    ):
+        """
+        Adaptor for the Value with Mask head in UniCeption.
+
+        Args:
+            name (str): Name of the adaptor.
+            value_adaptor (UniCeptionAdaptorBase): Adaptor for the value.
+            mask_adaptor (UniCeptionAdaptorBase): Adaptor for the mask.
+        """
+
+        super().__init__(
+            name,
+            required_channels=value_adaptor.required_channels + mask_adaptor.required_channels,
+            *args,
+            **kwargs,
+        )
+
+        self.value_adaptor = value_adaptor
+        self.mask_adaptor = mask_adaptor
+
+    def forward(self, adaptor_input: AdaptorInput):
+        value_input, mask_input = torch.split(
+            adaptor_input.adaptor_feature,
+            [self.value_adaptor.required_channels, self.mask_adaptor.required_channels],
+            dim=1,
+        )
+        value_adaptor_input = AdaptorInput(adaptor_feature=value_input, output_shape_hw=adaptor_input.output_shape_hw)
+        mask_adaptor_input = AdaptorInput(adaptor_feature=mask_input, output_shape_hw=adaptor_input.output_shape_hw)
+        value_output = self.value_adaptor(value_adaptor_input)
+        mask_output = self.mask_adaptor(mask_adaptor_input)
+
+        return RegressionWithMaskAdaptorOutput(
+            value=value_output.value, mask=mask_output.mask, logits=mask_output.logits
+        )
+
+
+class PointMapWithMaskAdaptor(ValueWithMaskAdaptor):
+    def __init__(
+        self,
+        name: str,
+        # Pointmap adaptor
+        pointmap_mode: str,
+        pointmap_vmin: float,
+        pointmap_vmax: float,
+        *args,
+        **kwargs,
+    ):
+        """
+        Adaptor for the PointMap with Confidence head in UniCeption.
+        """
+        pointmap_adaptor = PointMapAdaptor(name=f"{name}", mode=pointmap_mode, vmin=pointmap_vmin, vmax=pointmap_vmax)
+
+        mask_adaptor = MaskAdaptor(name=f"{name}_mask")
+
+        super().__init__(name, value_adaptor=pointmap_adaptor, mask_adaptor=mask_adaptor, *args, **kwargs)
+
+
+class RayDirectionsPlusDepthwithMaskAdaptor(ValueWithMaskAdaptor):
+    def __init__(
+        self,
+        name: str,
+        # Ray directions adaptor
+        ray_directions_mode: str,
+        ray_directions_normalize_to_unit_sphere: bool,
+        ray_directions_normalize_to_unit_image_plane: bool,
+        ray_directions_vmin: float,
+        ray_directions_vmax: float,
+        ray_directions_clamp_min_of_z_dir: bool,
+        ray_directions_z_dir_min: float,
+        # Depth adaptor
+        depth_mode: str,
+        depth_vmin: float,
+        depth_vmax: float,
+        *args,
+        **kwargs,
+    ):
+        """
+        Adaptor for the RayDirections + Depth with Mask head in UniCeption.
+        """
+        ray_directions_plus_depth_adaptor = RayDirectionsPlusDepthAdaptor(
+            name=f"{name}",
+            ray_directions_mode=ray_directions_mode,
+            ray_directions_normalize_to_unit_sphere=ray_directions_normalize_to_unit_sphere,
+            ray_directions_normalize_to_unit_image_plane=ray_directions_normalize_to_unit_image_plane,
+            ray_directions_vmin=ray_directions_vmin,
+            ray_directions_vmax=ray_directions_vmax,
+            ray_directions_clamp_min_of_z_dir=ray_directions_clamp_min_of_z_dir,
+            ray_directions_z_dir_min=ray_directions_z_dir_min,
+            depth_mode=depth_mode,
+            depth_vmin=depth_vmin,
+            depth_vmax=depth_vmax,
+        )
+
+        mask_adaptor = MaskAdaptor(name=f"{name}_mask")
+
+        super().__init__(
+            name, value_adaptor=ray_directions_plus_depth_adaptor, mask_adaptor=mask_adaptor, *args, **kwargs
+        )
+
+
+class RayMapPlusDepthwithMaskAdaptor(ValueWithMaskAdaptor):
+    def __init__(
+        self,
+        name: str,
+        # RayMap adaptor
+        ray_origins_mode: str,
+        ray_origins_vmin: float,
+        ray_origins_vmax: float,
+        ray_directions_mode: str,
+        ray_directions_normalize_to_unit_sphere: bool,
+        ray_directions_normalize_to_unit_image_plane: bool,
+        ray_directions_vmin: float,
+        ray_directions_vmax: float,
+        ray_directions_clamp_min_of_z_dir: bool,
+        ray_directions_z_dir_min: float,
+        # Depth adaptor
+        depth_mode: str,
+        depth_vmin: float,
+        depth_vmax: float,
+        *args,
+        **kwargs,
+    ):
+        """
+        Adaptor for the RayMap (RayOrigins + RayDirections) + Depth with Mask head in UniCeption.
+        """
+        raymap_plus_depth_adaptor = RayMapPlusDepthAdaptor(
+            name=f"{name}",
+            ray_origins_mode=ray_origins_mode,
+            ray_origins_vmin=ray_origins_vmin,
+            ray_origins_vmax=ray_origins_vmax,
+            ray_directions_mode=ray_directions_mode,
+            ray_directions_normalize_to_unit_sphere=ray_directions_normalize_to_unit_sphere,
+            ray_directions_normalize_to_unit_image_plane=ray_directions_normalize_to_unit_image_plane,
+            ray_directions_vmin=ray_directions_vmin,
+            ray_directions_vmax=ray_directions_vmax,
+            ray_directions_clamp_min_of_z_dir=ray_directions_clamp_min_of_z_dir,
+            ray_directions_z_dir_min=ray_directions_z_dir_min,
+            depth_mode=depth_mode,
+            depth_vmin=depth_vmin,
+            depth_vmax=depth_vmax,
+        )
+
+        mask_adaptor = MaskAdaptor(name=f"{name}_mask")
+
+        super().__init__(name, value_adaptor=raymap_plus_depth_adaptor, mask_adaptor=mask_adaptor, *args, **kwargs)
+
+
+class RayMapPlusDepthPlusQuatswithMaskAdaptor(ValueWithMaskAdaptor):
+    def __init__(
+        self,
+        name: str,
+        # RayMap adaptor
+        ray_origins_mode: str,
+        ray_origins_vmin: float,
+        ray_origins_vmax: float,
+        ray_directions_mode: str,
+        ray_directions_normalize_to_unit_sphere: bool,
+        ray_directions_normalize_to_unit_image_plane: bool,
+        ray_directions_vmin: float,
+        ray_directions_vmax: float,
+        ray_directions_clamp_min_of_z_dir: bool,
+        ray_directions_z_dir_min: float,
+        # Depth adaptor
+        depth_mode: str,
+        depth_vmin: float,
+        depth_vmax: float,
+        # Quaternions adaptor
+        quaternions_mode: str,
+        quaternions_normalize: bool,
+        quaternions_vmin: float,
+        quaternions_vmax: float,
+        *args,
+        **kwargs,
+    ):
+        """
+        Adaptor for the RayMap (RayOrigins + RayDirections) + Depth + Quaternions with Mask head in UniCeption.
+        """
+        raymap_plus_depth_plus_quats_adaptor = RayMapPlusDepthPlusQuatsAdaptor(
+            name=f"{name}",
+            ray_origins_mode=ray_origins_mode,
+            ray_origins_vmin=ray_origins_vmin,
+            ray_origins_vmax=ray_origins_vmax,
+            ray_directions_mode=ray_directions_mode,
+            ray_directions_normalize_to_unit_sphere=ray_directions_normalize_to_unit_sphere,
+            ray_directions_normalize_to_unit_image_plane=ray_directions_normalize_to_unit_image_plane,
+            ray_directions_vmin=ray_directions_vmin,
+            ray_directions_vmax=ray_directions_vmax,
+            ray_directions_clamp_min_of_z_dir=ray_directions_clamp_min_of_z_dir,
+            ray_directions_z_dir_min=ray_directions_z_dir_min,
+            depth_mode=depth_mode,
+            depth_vmin=depth_vmin,
+            depth_vmax=depth_vmax,
+            quaternions_mode=quaternions_mode,
+            quaternions_normalize=quaternions_normalize,
+            quaternions_vmin=quaternions_vmin,
+            quaternions_vmax=quaternions_vmax,
+        )
+
+        mask_adaptor = MaskAdaptor(name=f"{name}_mask")
+
+        super().__init__(
+            name, value_adaptor=raymap_plus_depth_plus_quats_adaptor, mask_adaptor=mask_adaptor, *args, **kwargs
         )

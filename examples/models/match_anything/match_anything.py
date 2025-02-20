@@ -10,7 +10,6 @@ import numpy as np
 import torch
 from PIL import Image
 from torch.nn import functional as F
-
 from uniception.models.encoders.image_normalizations import IMAGE_NORMALIZATION_DICT
 from uniception.models.factory import MatchAnythingModel
 

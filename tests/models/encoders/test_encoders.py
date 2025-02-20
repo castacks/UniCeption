@@ -12,7 +12,6 @@ import numpy as np
 import requests
 import torch
 from PIL import Image
-
 from uniception.models.encoders import *
 from uniception.models.encoders.image_normalizations import *
 
