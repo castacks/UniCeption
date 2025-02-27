@@ -23,5 +23,8 @@ IMAGE_NORMALIZATION_DICT = {
     "sea_raft": ImageNormalization(
         mean=torch.tensor([0.0, 0.0, 0.0]), std=torch.tensor([1.0, 1.0, 1.0]) / 255
     ),  # Sea-RAFT uses 0-255 in FP32
+    "unimatch": ImageNormalization(
+        mean=torch.tensor([0.0, 0.0, 0.0]), std=torch.tensor([1.0, 1.0, 1.0]) / 255
+    ),  # UniMatch uses 0-255 in FP32
     "cosmos": ImageNormalization(mean=torch.tensor([0.0, 0.0, 0.0]), std=torch.tensor([0.5, 0.5, 0.5])),
 }
