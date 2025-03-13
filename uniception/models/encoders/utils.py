@@ -68,9 +68,7 @@ def profile_encoder(num_warmup=3, num_runs=20, autocast_precision="float16", use
             compile_status = (
                 "with torch.compile (dynamic=True)"
                 if use_compile and dynamic
-                else "with torch.compile (dynamic=False)"
-                if use_compile
-                else "without torch.compile"
+                else "with torch.compile (dynamic=False)" if use_compile else "without torch.compile"
             )
             print(f"Profiling results {compile_status}:")
             print(f"Forward Pass Time: {fwd_mean:.2f} ± {fwd_std:.2f} ms")

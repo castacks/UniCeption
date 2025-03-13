@@ -11,9 +11,9 @@ from typing import Iterable, List, Optional, Tuple, Union
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.utils
 from jaxtyping import Float
 from torch import Tensor
-import torch.utils
 from torch.utils.checkpoint import checkpoint
 
 from uniception.models.libs.croco.dpt_block import make_fusion_block, make_scratch, pair
@@ -171,15 +171,9 @@ class DPTFeature(nn.Module):
         )
 
         act_postprocess = [act_1_postprocess, act_2_postprocess, act_3_postprocess, act_4_postprocess]
-        
+
         self.input_process = nn.ModuleList(
-            [
-                nn.Sequential(
-                    act_,
-                    layer_rn_
-                )
-                for act_, layer_rn_ in zip(act_postprocess, self.scratch.layer_rn)
-            ]
+            [nn.Sequential(act_, layer_rn_) for act_, layer_rn_ in zip(act_postprocess, self.scratch.layer_rn)]
         )
 
     def forward(self, dpt_input: PredictionHeadLayeredInput) -> DPTFeatureInput:
@@ -225,7 +219,9 @@ class DPTFeature(nn.Module):
 
             layers = [checkpoint(self.input_process[idx], l, use_reentrant=False) for idx, l in enumerate(layers)]
 
-            path_4 = checkpoint(self.scratch.refinenet4, layers[3], use_reentrant=False)[:, :, : layers[2].shape[2], : layers[2].shape[3]]
+            path_4 = checkpoint(self.scratch.refinenet4, layers[3], use_reentrant=False)[
+                :, :, : layers[2].shape[2], : layers[2].shape[3]
+            ]
             path_3 = checkpoint(self.scratch.refinenet3, path_4, layers[2], use_reentrant=False)
             path_2 = checkpoint(self.scratch.refinenet2, path_3, layers[1], use_reentrant=False)
             feature_upsampled_8x = checkpoint(self.scratch.refinenet1, path_2, layers[0], use_reentrant=False)
@@ -267,7 +263,7 @@ class DPTRegressionProcessor(nn.Module):
             hidden_dims = [input_feature_dim // 2] * 2
         else:
             assert isinstance(hidden_dims, List) and len(hidden_dims) == 2
-        
+
         self.checkpoint_gradient = checkpoint_gradient
 
         self.conv1 = nn.Conv2d(input_feature_dim, hidden_dims[0], kernel_size=3, stride=1, padding=1)
@@ -425,7 +421,6 @@ class DPTFeatureDoubleUpsampling(nn.Module):
         self.input_feature_dims = input_feature_dims
 
         self.scratch = self.make_scratch_2(layer_dims, feature_dim, groups=1, expand=False)
-        
 
         self.scratch.refinenet3 = make_fusion_block(feature_dim, use_bn, output_width_ratio)
         self.scratch.refinenet4 = make_fusion_block(feature_dim, use_bn, output_width_ratio)
@@ -492,7 +487,6 @@ class DPTFeatureDoubleUpsampling(nn.Module):
 
         self.input_feature_dims = [dt * len(self.main_tasks) for dt in input_feature_dims]
 
-
         act_3_postprocess = nn.Sequential(
             nn.Conv2d(
                 in_channels=self.input_feature_dims[0],
@@ -521,15 +515,9 @@ class DPTFeatureDoubleUpsampling(nn.Module):
         )
 
         act_postprocess = [act_3_postprocess, act_4_postprocess]
-        
+
         self.input_process = nn.ModuleList(
-            [
-                nn.Sequential(
-                    act_,
-                    layer_rn_
-                )
-                for act_, layer_rn_ in zip(act_postprocess, self.scratch.layer_rn)
-            ]
+            [nn.Sequential(act_, layer_rn_) for act_, layer_rn_ in zip(act_postprocess, self.scratch.layer_rn)]
         )
 
     def forward(self, dpt_input: PredictionHeadLayeredInput) -> DPTFeatureInput:
@@ -573,7 +561,9 @@ class DPTFeatureDoubleUpsampling(nn.Module):
 
             layers = [checkpoint(self.input_process[idx], l, use_reentrant=False) for idx, l in enumerate(layers)]
 
-            path_4 = checkpoint(self.scratch.refinenet4, layers[1], use_reentrant=False)[:, :, : layers[0].shape[2], : layers[0].shape[3]]
+            path_4 = checkpoint(self.scratch.refinenet4, layers[1], use_reentrant=False)[
+                :, :, : layers[0].shape[2], : layers[0].shape[3]
+            ]
             feature_upsampled_2x = checkpoint(self.scratch.refinenet3, path_4, layers[0], use_reentrant=False)
 
         return DPTFeatureInput(

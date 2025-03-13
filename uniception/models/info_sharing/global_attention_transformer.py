@@ -151,7 +151,7 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
             )
             ckpt = torch.load(self.pretrained_checkpoint_path, weights_only=False)
             print(self.load_state_dict(ckpt["model"]))
-        
+
         # apply gradient checkpointing if enabled
         if self.gradient_checkpointing:
             for i, block in enumerate(self.self_attention_blocks):
@@ -384,7 +384,10 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
     def forward(
         self,
         model_input: MultiViewTransformerInput,
-    ) -> Union[List[MultiViewTransformerOutput], Tuple[MultiViewTransformerOutput, List[MultiViewTransformerOutput]],]:
+    ) -> Union[
+        List[MultiViewTransformerOutput],
+        Tuple[MultiViewTransformerOutput, List[MultiViewTransformerOutput]],
+    ]:
         """
         Forward interface for the Multi-View Global-Attention Transformer with Intermediate Feature Return.
 

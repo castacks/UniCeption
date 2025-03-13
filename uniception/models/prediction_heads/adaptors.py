@@ -997,3 +997,11 @@ class RayMapPlusDepthPlusQuatswithConfidenceAdaptor(ValueWithConfidenceAdaptor):
             *args,
             **kwargs,
         )
+
+
+CLASSNAME_TO_ADAPTOR_CLASS = {
+    "FlowWithConfidenceAdaptor": FlowWithConfidenceAdaptor,
+    "FlowAdaptor": FlowAdaptor,
+    "MaskAdaptor": MaskAdaptor,
+    "Covariance2DAdaptor": Covariance2DAdaptor,
+}
