@@ -220,7 +220,7 @@ class FeatureFusionBlock_custom(nn.Module):
             output = nn.functional.interpolate(
                 output, scale_factor=2, mode="bilinear", align_corners=self.align_corners
             )
-        output = self.out_conv(output)
+        output = self.out_conv(output) # This causes inconsistent gradient stride. don't know why.
         return output
 
 

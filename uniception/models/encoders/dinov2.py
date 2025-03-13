@@ -83,6 +83,7 @@ class DINOv2Encoder(UniCeptionViTEncoderBase):
         #     )
         # except:  # Load from cache
         self.model = torch.hub.load("facebookresearch/dinov2", DINO_MODELS[self.with_registers][self.version])
+        del self.model.mask_token # This parameter is unused in producing patch features, and will lead to unused parameters
 
         if use_pytorch_sdpa:
             self.enable_pytorch_native_sdpa()
