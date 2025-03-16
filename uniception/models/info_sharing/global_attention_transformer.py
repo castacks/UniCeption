@@ -35,6 +35,7 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
         size: Optional[str] = None,
         depth: int = 12,
         dim: int = 768,
+        latent_attn_dim: Optional[int] = None,
         num_heads: int = 12,
         mlp_ratio: float = 4.0,
         qkv_bias: bool = True,
@@ -62,6 +63,7 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
             size (str): String to indicate interpretable size of the transformer (for e.g., base, large, ...). (default: None)
             depth (int): Number of transformer layers. (default: 12, base size)
             dim (int): Dimension of the transformer. (default: 768, base size)
+            latent_attn_dim (int): Dimension of latent attention space. (default: 768, base size)
             num_heads (int): Number of attention heads. (default: 12, base size)
             mlp_ratio (float): Ratio of hidden to input dimension in MLP (default: 4.)
             qkv_bias (bool): Whether to include bias in qkv projection (default: True)
@@ -85,6 +87,7 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
         self.use_rand_idx_pe_for_non_reference_views = use_rand_idx_pe_for_non_reference_views
         self.depth = depth
         self.dim = dim
+        self.latent_attn_dim = latent_attn_dim
         self.num_heads = num_heads
         self.mlp_ratio = mlp_ratio
         self.qkv_bias = qkv_bias
@@ -112,6 +115,7 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
                 SelfAttentionBlock(
                     dim=self.dim,
                     num_heads=self.num_heads,
+                    latent_attn_dim=self.latent_attn_dim,
                     mlp_ratio=self.mlp_ratio,
                     qkv_bias=self.qkv_bias,
                     qk_norm=self.qk_norm,

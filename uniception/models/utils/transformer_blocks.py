@@ -95,6 +95,7 @@ class Attention(nn.Module):
     def __init__(
         self,
         dim: int,
+        latent_attn_dim: Optional[int] = None,
         num_heads: int = 8,
         qkv_bias: bool = False,
         qk_norm: bool = False,
@@ -108,6 +109,7 @@ class Attention(nn.Module):
 
         Args:
             dim (int): Dimension of input features
+            latent_attn_dim (int): Dimension of latent attention features (default: None)
             num_heads (int): Number of attention heads (default: 8)
             qkv_bias (bool): Whether to include bias in qkv projection (default: False)
             qk_norm (bool): Whether to normalize q and k (default: False)
@@ -117,17 +119,27 @@ class Attention(nn.Module):
             custom_positional_encoding (Callable): Custom positional encoding function (default: None)
         """
         super().__init__()
-        assert dim % num_heads == 0, "dim should be divisible by num_heads"
+
+        if latent_attn_dim is not None:
+            assert latent_attn_dim % num_heads == 0, "latent_attn_dim should be divisible by num_heads"
+            self.latent_attn_dim = latent_attn_dim
+            self.latent_attn = True
+        else:
+            self.latent_attn = False
+            assert dim % num_heads == 0, "dim should be divisible by num_heads"
+
         self.num_heads = num_heads
-        self.head_dim = dim // num_heads
+        self.head_dim = dim // num_heads if not self.latent_attn else latent_attn_dim // num_heads
         self.scale = self.head_dim**-0.5
         self.fused_attn = use_fused_attn()
 
-        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
+        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias) if not self.latent_attn else nn.Linear(
+            dim, latent_attn_dim * 3, bias=qkv_bias
+        )
         self.q_norm = norm_layer(self.head_dim) if qk_norm else nn.Identity()
         self.k_norm = norm_layer(self.head_dim) if qk_norm else nn.Identity()
         self.attn_drop = nn.Dropout(attn_drop)
-        self.proj = nn.Linear(dim, dim)
+        self.proj = nn.Linear(dim, dim) if not self.latent_attn else nn.Linear(latent_attn_dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
         self.custom_positional_encoding = custom_positional_encoding
@@ -166,7 +178,7 @@ class Attention(nn.Module):
             attn = self.attn_drop(attn)
             x = attn @ v
 
-        x = x.transpose(1, 2).reshape(B, N, C)
+        x = x.transpose(1, 2).reshape(B, N, -1)
         x = self.proj(x)
         x = self.proj_drop(x)
         return x
@@ -308,6 +320,7 @@ class SelfAttentionBlock(nn.Module):
         self,
         dim: int,
         num_heads: int,
+        latent_attn_dim: Optional[int] = None,
         mlp_ratio: float = 4.0,
         qkv_bias: bool = False,
         qk_norm: bool = False,
@@ -342,6 +355,7 @@ class SelfAttentionBlock(nn.Module):
         self.norm1 = norm_layer(dim)
         self.attn = Attention(
             dim,
+            latent_attn_dim=latent_attn_dim,
             num_heads=num_heads,
             qkv_bias=qkv_bias,
             qk_norm=qk_norm,
