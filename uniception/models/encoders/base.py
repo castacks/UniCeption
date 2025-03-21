@@ -8,6 +8,7 @@ from typing import Optional
 import torch.nn as nn
 from jaxtyping import Float
 from torch import Tensor
+from torch.utils.checkpoint import checkpoint
 
 
 @dataclass
@@ -103,6 +104,7 @@ class UniCeptionViTEncoderBase(UniCeptionEncoderBase):
     def __init__(
         self,
         patch_size: int,
+        gradient_checkpointing: bool = False,
         *args,
         **kwargs,
     ):
@@ -112,6 +114,22 @@ class UniCeptionViTEncoderBase(UniCeptionEncoderBase):
         super().__init__(*args, **kwargs)
 
         self.patch_size = patch_size
+        self.gradient_checkpointing = gradient_checkpointing
+
+    def wrap_module_with_gradient_checkpointing(self, module: nn.Module):
+        """
+        Wrapper for Gradient Checkpointing
+        References: https://github.com/microsoft/MoGe
+        """
+
+        class _CheckpointingWrapper(module.__class__):
+            _restore_cls = module.__class__
+
+            def forward(self, *args, **kwargs):
+                return checkpoint(super().forward, *args, use_reentrant=False, **kwargs)
+
+        module.__class__ = _CheckpointingWrapper
+        return module
 
 
 if __name__ == "__main__":
