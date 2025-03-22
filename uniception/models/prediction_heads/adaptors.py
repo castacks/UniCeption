@@ -1004,4 +1004,5 @@ CLASSNAME_TO_ADAPTOR_CLASS = {
     "FlowAdaptor": FlowAdaptor,
     "MaskAdaptor": MaskAdaptor,
     "Covariance2DAdaptor": Covariance2DAdaptor,
+    "ConfidenceAdaptor": ConfidenceAdaptor
 }
