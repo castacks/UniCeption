@@ -86,6 +86,18 @@ class MultiViewTransformerInput(InfoSharingInput):
 
     features: List[Float[Tensor, "batch input_embed_dim feat_height feat_width"]]
 
+@dataclass
+class MultiViewTransformerFeedForwardInput(MultiViewTransformerInput):
+    """
+    Input class for Multi-View Transformer. with Feed-Forward features that are to be merged
+    between blocks.
+    """
+
+    features: List[Float[Tensor, "batch input_embed_dim feat_height feat_width"]]
+
+    feedforward_features: List[List[Float[Tensor, "batch transformer_embed_dim feat_height feat_width"]]]
+    feedforward_indexes: List[int]
+
 
 @dataclass
 class MultiViewTransformerOutput(InfoSharingOutput):

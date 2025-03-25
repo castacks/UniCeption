@@ -16,7 +16,7 @@ from jaxtyping import Float
 from torch import Tensor
 from torch.utils.checkpoint import checkpoint
 
-from uniception.models.libs.croco.dpt_block import make_fusion_block, make_scratch, pair
+from uniception.models.libs.croco.dpt_block import make_fusion_block, make_scratch, pair, make_nonlinearity
 from uniception.models.prediction_heads.base import PixelTaskOutput, PredictionHeadLayeredInput
 
 
@@ -52,6 +52,7 @@ class DPTFeature(nn.Module):
         output_width_ratio=1,
         pretrained_checkpoint_path: str = None,
         checkpoint_gradient: bool = False,
+        nonlinearity: str = "relu",
         *args,
         **kwargs,
     ):
@@ -73,10 +74,10 @@ class DPTFeature(nn.Module):
 
         self.scratch = make_scratch(layer_dims, feature_dim, groups=1, expand=False)
 
-        self.scratch.refinenet1 = make_fusion_block(feature_dim, use_bn, output_width_ratio)
-        self.scratch.refinenet2 = make_fusion_block(feature_dim, use_bn, output_width_ratio)
-        self.scratch.refinenet3 = make_fusion_block(feature_dim, use_bn, output_width_ratio)
-        self.scratch.refinenet4 = make_fusion_block(feature_dim, use_bn, output_width_ratio)
+        self.scratch.refinenet1 = make_fusion_block(feature_dim, use_bn, output_width_ratio, nonlinearity=nonlinearity)
+        self.scratch.refinenet2 = make_fusion_block(feature_dim, use_bn, output_width_ratio, nonlinearity=nonlinearity)
+        self.scratch.refinenet3 = make_fusion_block(feature_dim, use_bn, output_width_ratio, nonlinearity=nonlinearity)
+        self.scratch.refinenet4 = make_fusion_block(feature_dim, use_bn, output_width_ratio, nonlinearity=nonlinearity)
 
         # delete resconfunit1 in refinement 4 because it is not used, and will cause error in DDP.
         del self.scratch.refinenet4.resConfUnit1
@@ -242,6 +243,7 @@ class DPTRegressionProcessor(nn.Module):
         hidden_dims: Optional[List[int]] = None,  # when not given, use input_feature_dim//2
         pretrained_checkpoint_path: str = None,
         checkpoint_gradient: bool = False,
+        nonlinearity: str = "relu",
         *args,
         **kwargs,
     ):
@@ -270,7 +272,7 @@ class DPTRegressionProcessor(nn.Module):
         # interpolate is dependent on target output size
         self.conv2 = nn.Sequential(
             nn.Conv2d(hidden_dims[0], hidden_dims[1], kernel_size=3, stride=1, padding=1),
-            nn.ReLU(True),
+            make_nonlinearity(nonlinearity),
             nn.Conv2d(hidden_dims[1], output_dim, kernel_size=1, stride=1, padding=0),
         )
 

@@ -710,6 +710,11 @@ class ConfidenceAdaptor(UniCeptionAdaptorBase):
 
             return RegressionAdaptorOutput(value=confidence)
 
+        elif self.confidence_type == "softmax":
+            B, C, H, W = x.shape
+            confidence = torch.nn.functional.softmax(x.reshape(B, C, -1), dim=-1).reshape(B, C, H, W) * (H * W)
+
+            return RegressionAdaptorOutput(value=confidence)
 
 class Covariance2DAdaptor(UniCeptionAdaptorBase):
     def __init__(

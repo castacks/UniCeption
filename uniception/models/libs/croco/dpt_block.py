@@ -79,6 +79,33 @@ def make_scratch(in_shape, out_shape, groups=1, expand=False):
 
     return scratch
 
+class SineActivation(nn.Module):
+    def __init__(self, dim=None, on_channels=False):
+        super().__init__()
+
+        self.dim = dim
+        self.on_channels = on_channels
+
+    def forward(self, x):
+        return torch.sin(x)
+
+class GaussianActivation(nn.Module):
+    def __init__(self, dim=None, on_channels=False):
+        super().__init__()
+        self.dim = dim
+        self.on_channels = on_channels
+
+    def forward(self, x):
+        return torch.exp(-x ** 2)
+
+class XCosineXActivation(nn.Module):
+    def __init__(self, dim=None, on_channels=False):
+        super().__init__()
+        self.dim = dim
+        self.on_channels = on_channels
+
+    def forward(self, x):
+        return x * torch.cos(x)
 
 class ResidualConvUnit_custom(nn.Module):
     """Residual convolution module."""
@@ -224,10 +251,31 @@ class FeatureFusionBlock_custom(nn.Module):
         return output
 
 
-def make_fusion_block(features, use_bn, width_ratio=1):
+def make_nonlinearity(nonlinearity, dim=None, on_channels=False):
+    if nonlinearity == "relu":
+        return nn.ReLU(False)
+    elif nonlinearity == "sine":
+        return SineActivation(dim=dim, on_channels=on_channels)
+    elif nonlinearity == "gaussian":
+        return GaussianActivation(dim=dim, on_channels=on_channels)
+    elif nonlinearity == "tanh":
+        return nn.Tanh()
+    elif nonlinearity == "sigmoid":
+        return nn.Sigmoid()
+    elif nonlinearity == "gelu":
+        return nn.GELU()
+    elif nonlinearity == "xcosx":
+        return XCosineXActivation(dim=dim, on_channels=on_channels)
+    else:
+        raise ValueError(f"Unknown nonlinearity: {nonlinearity}")
+
+def make_fusion_block(features, use_bn, width_ratio=1, nonlinearity="relu"):
+
+    nonlinear_layer = make_nonlinearity(nonlinearity, features, on_channels=True)
+    
     return FeatureFusionBlock_custom(
         features,
-        nn.ReLU(False),
+        nonlinear_layer,
         deconv=False,
         bn=use_bn,
         expand=False,
@@ -300,6 +348,7 @@ class DPTOutputAdapter(nn.Module):
         dim_tokens_enc: Optional[int] = None,
         head_type: str = "regression",
         output_width_ratio=1,
+        nonlinearity="relu",
         **kwargs
     ):
         super().__init__()
@@ -330,7 +379,7 @@ class DPTOutputAdapter(nn.Module):
                 nn.Conv2d(feature_dim, feature_dim // 2, kernel_size=3, stride=1, padding=1),
                 Interpolate(scale_factor=2, mode="bilinear", align_corners=True),
                 nn.Conv2d(feature_dim // 2, last_dim, kernel_size=3, stride=1, padding=1),
-                nn.ReLU(True),
+                make_nonlinearity(nonlinearity, dim=last_dim),
                 nn.Conv2d(last_dim, self.num_channels, kernel_size=1, stride=1, padding=0),
             )
         elif self.head_type == "semseg":
@@ -338,7 +387,7 @@ class DPTOutputAdapter(nn.Module):
             self.head = nn.Sequential(
                 nn.Conv2d(feature_dim, feature_dim, kernel_size=3, padding=1, bias=False),
                 nn.BatchNorm2d(feature_dim) if use_bn else nn.Identity(),
-                nn.ReLU(True),
+                make_nonlinearity(nonlinearity, dim=feature_dim),
                 nn.Dropout(0.1, False),
                 nn.Conv2d(feature_dim, self.num_channels, kernel_size=1),
                 Interpolate(scale_factor=2, mode="bilinear", align_corners=True),
