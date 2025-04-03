@@ -17,14 +17,15 @@ Install the `uniception` package in development mode by running the following co
 ```bash
 # Please use Conda or Python Virtual Environment based on your preference
 # For Conda Environment
-conda create --name uniception python=3.10
+conda create --name uniception python=3.12
 conda activate uniception
 # For Python Virtual Environment
 virtualenv uniception
 source uniception/bin/activate
-# Install PyTorch and other dependencies
-pip install torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0
-pip install -U xformers==0.0.27.post2 --index-url https://download.pytorch.org/whl/cu121
+# Install PyTorch and XFormers
+pip install torch torchvision torchaudio # Torch 2.6.0+cu12.4
+pip3 install -U xformers --index-url https://download.pytorch.org/whl/cu124 # Install based on PyTorch Version
+# Install Other Dependencies
 pip install -r requirements.txt
 pre-commit install # Github pre-commit hooks for linting
 cd uniception/models/libs/croco/curope # For CroCo
