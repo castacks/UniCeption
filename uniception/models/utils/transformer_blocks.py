@@ -133,8 +133,10 @@ class Attention(nn.Module):
         self.scale = self.head_dim**-0.5
         self.fused_attn = use_fused_attn()
 
-        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias) if not self.latent_attn else nn.Linear(
-            dim, latent_attn_dim * 3, bias=qkv_bias
+        self.qkv = (
+            nn.Linear(dim, dim * 3, bias=qkv_bias)
+            if not self.latent_attn
+            else nn.Linear(dim, latent_attn_dim * 3, bias=qkv_bias)
         )
         self.q_norm = norm_layer(self.head_dim) if qk_norm else nn.Identity()
         self.k_norm = norm_layer(self.head_dim) if qk_norm else nn.Identity()

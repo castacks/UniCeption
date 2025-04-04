@@ -79,6 +79,7 @@ def make_scratch(in_shape, out_shape, groups=1, expand=False):
 
     return scratch
 
+
 class SineActivation(nn.Module):
     def __init__(self, dim=None, on_channels=False):
         super().__init__()
@@ -89,6 +90,7 @@ class SineActivation(nn.Module):
     def forward(self, x):
         return torch.sin(x)
 
+
 class GaussianActivation(nn.Module):
     def __init__(self, dim=None, on_channels=False):
         super().__init__()
@@ -96,7 +98,8 @@ class GaussianActivation(nn.Module):
         self.on_channels = on_channels
 
     def forward(self, x):
-        return torch.exp(-x ** 2)
+        return torch.exp(-(x**2))
+
 
 class XCosineXActivation(nn.Module):
     def __init__(self, dim=None, on_channels=False):
@@ -106,6 +109,7 @@ class XCosineXActivation(nn.Module):
 
     def forward(self, x):
         return x * torch.cos(x)
+
 
 class ResidualConvUnit_custom(nn.Module):
     """Residual convolution module."""
@@ -247,7 +251,7 @@ class FeatureFusionBlock_custom(nn.Module):
             output = nn.functional.interpolate(
                 output, scale_factor=2, mode="bilinear", align_corners=self.align_corners
             )
-        output = self.out_conv(output) # This causes inconsistent gradient stride. don't know why.
+        output = self.out_conv(output)  # This causes inconsistent gradient stride. don't know why.
         return output
 
 
@@ -269,10 +273,11 @@ def make_nonlinearity(nonlinearity, dim=None, on_channels=False):
     else:
         raise ValueError(f"Unknown nonlinearity: {nonlinearity}")
 
+
 def make_fusion_block(features, use_bn, width_ratio=1, nonlinearity="relu"):
 
     nonlinear_layer = make_nonlinearity(nonlinearity, features, on_channels=True)
-    
+
     return FeatureFusionBlock_custom(
         features,
         nonlinear_layer,
@@ -349,7 +354,7 @@ class DPTOutputAdapter(nn.Module):
         head_type: str = "regression",
         output_width_ratio=1,
         nonlinearity="relu",
-        **kwargs
+        **kwargs,
     ):
         super().__init__()
         self.num_channels = num_channels

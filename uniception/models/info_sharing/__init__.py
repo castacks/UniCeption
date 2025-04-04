@@ -2,6 +2,7 @@ from uniception.models.info_sharing.alternating_attention_transformer import (
     MultiViewAlternatingAttentionTransformer,
     MultiViewAlternatingAttentionTransformerIFR,
 )
+from uniception.models.info_sharing.base import MultiViewTransformerFeedForwardInput
 from uniception.models.info_sharing.cross_attention_transformer import (
     MultiViewCrossAttentionTransformer,
     MultiViewCrossAttentionTransformerIFR,
@@ -13,11 +14,9 @@ from uniception.models.info_sharing.diff_cross_attention_transformer import (
 )
 from uniception.models.info_sharing.global_attention_transformer import (
     MultiViewGlobalAttentionTransformer,
+    MultiViewGlobalAttentionTransformerFFIFR,
     MultiViewGlobalAttentionTransformerIFR,
-    MultiViewGlobalAttentionTransformerFFIFR
 )
-
-from uniception.models.info_sharing.base import MultiViewTransformerFeedForwardInput
 
 INFO_SHARING_CLASSES = {
     "cross_attention": (MultiViewCrossAttentionTransformer, MultiViewCrossAttentionTransformerIFR),
@@ -29,7 +28,11 @@ INFO_SHARING_CLASSES = {
         MultiViewAlternatingAttentionTransformer,
         MultiViewAlternatingAttentionTransformerIFR,
     ),
-    "global_attention": (MultiViewGlobalAttentionTransformer, MultiViewGlobalAttentionTransformerIFR, MultiViewGlobalAttentionTransformerFFIFR),
+    "global_attention": (
+        MultiViewGlobalAttentionTransformer,
+        MultiViewGlobalAttentionTransformerIFR,
+        MultiViewGlobalAttentionTransformerFFIFR,
+    ),
 }
 
 __all__ = ["INFO_SHARING_CLASSES", "MultiViewTransformerInput", "MultiViewTransformerFeedForwardInput"]

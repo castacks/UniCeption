@@ -84,7 +84,9 @@ class DINOv2Encoder(UniCeptionViTEncoderBase):
         #     )
         # except:  # Load from cache
         self.model = torch.hub.load("facebookresearch/dinov2", DINO_MODELS[self.with_registers][self.version])
-        del self.model.mask_token # This parameter is unused in producing patch features, and will lead to unused parameters
+        del (
+            self.model.mask_token
+        )  # This parameter is unused in producing patch features, and will lead to unused parameters
 
         # keep only the first n layers of the model if keep_first_n_layers is specified
         if keep_first_n_layers is not None:

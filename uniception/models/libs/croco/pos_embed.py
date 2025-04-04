@@ -101,10 +101,11 @@ def interpolate_pos_embed(model, checkpoint_model):
 # RoPE2D: RoPE implementation in 2D
 # ----------------------------------------------------------
 try:
-    from uniception.models.libs.croco.curope import cuRoPE2D
+    # from uniception.models.libs.croco.curope import cuRoPE2D
+    assert False
 
     RoPE2D = cuRoPE2D
-except ImportError:
+except:
     print("Warning, cannot find cuda-compiled version of RoPE2D, using a slow pytorch version instead")
 
     class RoPE2D(torch.nn.Module):

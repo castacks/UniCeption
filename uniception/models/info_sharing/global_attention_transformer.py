@@ -14,16 +14,16 @@ from jaxtyping import Float
 from torch import Tensor
 
 from uniception.models.info_sharing.base import (
+    MultiViewTransformerFeedForwardInput,
     MultiViewTransformerInput,
     MultiViewTransformerOutput,
-    MultiViewTransformerFeedForwardInput,
     UniCeptionInfoSharingBase,
 )
+from uniception.models.libs.croco.pos_embed import RoPE2D
 from uniception.models.utils.intermediate_feature_return import IntermediateFeatureReturner, feature_take_indices
 from uniception.models.utils.positional_encoding import PositionGetter
 from uniception.models.utils.transformer_blocks import Mlp, SelfAttentionBlock
 
-from uniception.models.libs.croco.pos_embed import RoPE2D
 
 class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
     "UniCeption Multi-View Global-Attention Transformer for information sharing across image features from different views."
@@ -118,7 +118,6 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
                 self.custom_positional_encoding = self.rope
             else:
                 raise ValueError(f"Unknown custom positional encoding: {self.custom_positional_encoding}")
-
 
         # Initialize the self-attention blocks which ingest all views at once
         self.self_attention_blocks = nn.ModuleList(
@@ -540,9 +539,9 @@ class MultiViewGlobalAttentionTransformerFFIFR(MultiViewGlobalAttentionTransform
         self.num_feedforward_layers = num_feedforward_layers
 
         # Initialize the feedforward projection layer for input embeddings
-        self.feedforward_projections = nn.ModuleList([
-            nn.Linear(self.input_embed_dim, self.dim, bias=True) for _ in range(self.num_feedforward_layers)
-        ])
+        self.feedforward_projections = nn.ModuleList(
+            [nn.Linear(self.input_embed_dim, self.dim, bias=True) for _ in range(self.num_feedforward_layers)]
+        )
 
     def forward(
         self,
@@ -599,14 +598,19 @@ class MultiViewGlobalAttentionTransformerFFIFR(MultiViewGlobalAttentionTransform
         multi_view_ff_features = model_input.feedforward_features
         multi_view_ff_index = model_input.feedforward_indexes
 
-        assert len(multi_view_ff_features) == len(multi_view_ff_index), "Feedforward features and indexes must have same length"
-        
+        assert len(multi_view_ff_features) == len(
+            multi_view_ff_index
+        ), "Feedforward features and indexes must have same length"
+
         # Stack the multi-view feedforward features I x V x (N, C, H, W) to I x (N, V, C, H, W) (assumes all V views have same shape)
         multi_view_ff_features = [torch.stack(x, dim=1) for x in multi_view_ff_features]
-        
+
         # Resize the multi-view feedforward features from I x NVCHW to I x NLC, where L = V x H x W
         multi_view_ff_features = [x.permute(0, 1, 3, 4, 2) for x in multi_view_ff_features]
-        multi_view_ff_features = [x.reshape(batch_size, num_of_views * height * width, self.input_embed_dim).contiguous() for x in multi_view_ff_features]
+        multi_view_ff_features = [
+            x.reshape(batch_size, num_of_views * height * width, self.input_embed_dim).contiguous()
+            for x in multi_view_ff_features
+        ]
 
         # Project input features to the transformer dimension
         multi_view_features = self.proj_embed(multi_view_features)
@@ -702,6 +706,7 @@ class MultiViewGlobalAttentionTransformerFFIFR(MultiViewGlobalAttentionTransform
         output_multi_view_features = MultiViewTransformerOutput(features=output_multi_view_features)
 
         return output_multi_view_features, intermediate_multi_view_features
+
 
 def dummy_positional_encoding(x, xpos):
     "Dummy function for positional encoding of tokens"

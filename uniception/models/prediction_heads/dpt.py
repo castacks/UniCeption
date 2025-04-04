@@ -16,7 +16,7 @@ from jaxtyping import Float
 from torch import Tensor
 from torch.utils.checkpoint import checkpoint
 
-from uniception.models.libs.croco.dpt_block import make_fusion_block, make_scratch, pair, make_nonlinearity
+from uniception.models.libs.croco.dpt_block import make_fusion_block, make_nonlinearity, make_scratch, pair
 from uniception.models.prediction_heads.base import PixelTaskOutput, PredictionHeadLayeredInput
 
 

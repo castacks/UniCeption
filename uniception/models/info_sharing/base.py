@@ -86,6 +86,7 @@ class MultiViewTransformerInput(InfoSharingInput):
 
     features: List[Float[Tensor, "batch input_embed_dim feat_height feat_width"]]
 
+
 @dataclass
 class MultiViewTransformerFeedForwardInput(MultiViewTransformerInput):
     """
