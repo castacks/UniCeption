@@ -24,6 +24,7 @@ class DINOv2Encoder(UniCeptionViTEncoderBase):
         with_registers: bool = False,
         pretrained_checkpoint_path: str = None,
         torch_hub_force_reload: bool = False,
+        keep_first_n_layers: Optional[int] = None,
         use_pytorch_sdpa=True,
         gradient_checkpointing=False,
         *args,
@@ -84,6 +85,10 @@ class DINOv2Encoder(UniCeptionViTEncoderBase):
         # except:  # Load from cache
         self.model = torch.hub.load("facebookresearch/dinov2", DINO_MODELS[self.with_registers][self.version])
         del self.model.mask_token # This parameter is unused in producing patch features, and will lead to unused parameters
+
+        # keep only the first n layers of the model if keep_first_n_layers is specified
+        if keep_first_n_layers is not None:
+            self.model.blocks = nn.ModuleList(self.model.blocks[:keep_first_n_layers])
 
         if use_pytorch_sdpa:
             self.enable_pytorch_native_sdpa()
@@ -173,6 +178,7 @@ class DINOv2IntermediateFeatureReturner(DINOv2Encoder, IntermediateFeatureReturn
         with_registers: bool = False,
         pretrained_checkpoint_path: str = None,
         indices: Optional[Union[int, List[int]]] = 1,
+        keep_first_n_layers: Optional[int] = None,
         norm_intermediate: bool = True,
         *args,
         **kwargs,
@@ -200,6 +206,7 @@ class DINOv2IntermediateFeatureReturner(DINOv2Encoder, IntermediateFeatureReturn
             patch_size=patch_size,
             size=size,
             with_registers=with_registers,
+            keep_first_n_layers=keep_first_n_layers,
             pretrained_checkpoint_path=pretrained_checkpoint_path,
             *args,
             **kwargs,
@@ -299,7 +306,7 @@ if __name__ == "__main__":
 
     # Profile the DINOv2 Encoder
     dinov2_encoder = DINOv2Encoder(
-        name="dinov2_large", size="large", use_pytorch_sdpa=True, gradient_checkpointing=True
+        name="dinov2_large", size="large", use_pytorch_sdpa=True, gradient_checkpointing=True, keep_first_n_layers=12
     ).cuda()
     dummy_input = ViTEncoderInput(image=torch.randn(24, 3, 560, 420).cuda(), data_norm_type="dinov2")
 

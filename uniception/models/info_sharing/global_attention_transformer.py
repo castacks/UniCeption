@@ -23,6 +23,7 @@ from uniception.models.utils.intermediate_feature_return import IntermediateFeat
 from uniception.models.utils.positional_encoding import PositionGetter
 from uniception.models.utils.transformer_blocks import Mlp, SelfAttentionBlock
 
+from uniception.models.libs.croco.pos_embed import RoPE2D
 
 class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
     "UniCeption Multi-View Global-Attention Transformer for information sharing across image features from different views."
@@ -48,7 +49,7 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
         act_layer: Type[nn.Module] = nn.GELU,
         norm_layer: Union[Type[nn.Module], Callable[..., nn.Module]] = partial(nn.LayerNorm, eps=1e-6),
         mlp_layer: Type[nn.Module] = Mlp,
-        custom_positional_encoding: Optional[Callable] = None,
+        custom_positional_encoding: Optional[Union[str, Callable]] = None,
         pretrained_checkpoint_path: Optional[str] = None,
         gradient_checkpointing: bool = False,
         *args,
@@ -109,6 +110,15 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
             self.proj_embed = nn.Linear(self.input_embed_dim, self.dim, bias=True)
         else:
             self.proj_embed = nn.Identity()
+
+        # Initialize custom position encodings
+        if self.custom_positional_encoding is not None and isinstance(self.custom_positional_encoding, str):
+            if self.custom_positional_encoding == "rope":
+                self.rope = RoPE2D(freq=100.0, F0=1.0)
+                self.custom_positional_encoding = self.rope
+            else:
+                raise ValueError(f"Unknown custom positional encoding: {self.custom_positional_encoding}")
+
 
         # Initialize the self-attention blocks which ingest all views at once
         self.self_attention_blocks = nn.ModuleList(
