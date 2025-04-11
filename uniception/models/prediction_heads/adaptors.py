@@ -165,8 +165,52 @@ class FlowAdaptor(UniCeptionAdaptorBase):
         return coords
 
 
+class ScaleAdaptor(UniCeptionAdaptorBase):
+    def __init__(self, name: str, mode: str, vmin: float = 0, vmax: float = np.inf, *args, **kwargs):
+        """
+        Adaptor for scale prediction in UniCeption.
+
+        Args:
+            name (str): Name of the adaptor.
+            mode (str): Mode of the scale prediction, either "linear", "square" or "exp". Scales the predicted scaling factor accordingly.
+            vmin (float): Minimum value of the scale prediction after scaling.
+            vmax (float): Maximum value of the scale prediction after scaling.
+        """
+        super().__init__(name, required_channels=1, *args, **kwargs)
+
+        self.mode = mode
+        self.vmin = vmin
+        self.vmax = vmax
+
+        self.no_bounds = (vmin == -float("inf")) and (vmax == float("inf"))
+
+    def forward(self, adaptor_input: AdaptorInput):
+        """
+        Forward pass for the ScaleAdaptor.
+
+        Args:
+            adaptor_input (AdaptorInput): Input to the adaptor. (B x 1 x ...)
+        Returns:
+            AdaptorOutput: Output of the adaptor.
+        """
+        predicted_scale_factor = adaptor_input.adaptor_feature
+        output_scale_factor = None
+
+        if self.mode == "linear":
+            output_scale_factor = predicted_scale_factor
+        elif self.mode == "square":
+            output_scale_factor = predicted_scale_factor.square()
+        elif self.mode == "exp":
+            output_scale_factor = torch.exp(predicted_scale_factor)
+
+        if not self.no_bounds:
+            output_scale_factor = output_scale_factor.clip(self.vmin, self.vmax)
+
+        return RegressionAdaptorOutput(value=output_scale_factor)
+
+
 class DepthAdaptor(UniCeptionAdaptorBase):
-    def __init__(self, name: str, mode: str, vmin: float = -np.inf, vmax: float = np.inf, *args, **kwargs):
+    def __init__(self, name: str, mode: str, vmin: float = 0, vmax: float = np.inf, *args, **kwargs):
         """
         Adaptor for the Depth head in UniCeption.
 
@@ -182,7 +226,7 @@ class DepthAdaptor(UniCeptionAdaptorBase):
         self.vmin = vmin
         self.vmax = vmax
 
-        self.no_bounds = (vmin == -float("inf")) and (vmax == float("inf"))
+        self.no_bounds = (vmin == 0) and (vmax == float("inf"))
 
     def forward(self, adaptor_input: AdaptorInput):
         """

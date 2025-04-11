@@ -107,7 +107,7 @@ class PoseHead(nn.Module):
 
         # Load the pretrained checkpoint if provided
         if self.pretrained_checkpoint_path is not None:
-            print(f"Loading pretrained linear dense feature head from {self.pretrained_checkpoint_path}")
+            print(f"Loading pretrained pose head from {self.pretrained_checkpoint_path}")
             ckpt = torch.load(self.pretrained_checkpoint_path, weights_only=False)
             print(self.load_state_dict(ckpt["model"]))
 

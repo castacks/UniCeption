@@ -23,6 +23,11 @@ class PredictionHeadLayeredInput:
 
 
 @dataclass
+class PredictionHeadTokenInput:
+    last_feature: Float[Tensor, "batch_size feat_dim num_tokens"]
+
+
+@dataclass
 class PixelTaskOutput:
     """
     PixelTaskOutput have dense pixel-wise output in BCHW format,
