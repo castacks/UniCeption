@@ -142,6 +142,7 @@ class RADIOIntermediateFeatureReturner(RADIOEncoder, IntermediateFeatureReturner
         norm_intermediate: bool = True,
         stop_early: bool = False,
         intermediates_only: bool = True,
+        feature_adaptor: Optional[str] = None,
         *args,
         **kwargs,
     ):
@@ -161,6 +162,7 @@ class RADIOIntermediateFeatureReturner(RADIOEncoder, IntermediateFeatureReturner
             norm_intermediate (bool, optional): Whether to normalize the intermediate features. Defaults to True.
             stop_early (bool, optional): Whether to stop early. Defaults to False.
             intermediates_only (bool, optional): Whether to return only the intermediate features. Defaults to True.
+            feature_adaptor (Optional[str], optional): Feature adaptor to use. Defaults to None. may be "dino_v2"
         """
         # Init the base classes
         RADIOEncoder.__init__(
@@ -181,6 +183,32 @@ class RADIOIntermediateFeatureReturner(RADIOEncoder, IntermediateFeatureReturner
             stop_early=stop_early,
             intermediates_only=intermediates_only,
         )
+
+        # convert indices to absolute indices if indices is None
+        if self.indices is None:
+            self.indices = list(range(len(self.model.model.blocks)))
+
+        self.feature_adaptor = feature_adaptor
+        if (self.feature_adaptor is not None) and self.feature_adaptor == "dino_v2":
+            # initialize a dummy radio encoder with the adaptor setting
+            dummy_model = torch.hub.load(
+                "NVlabs/RADIO",
+                "radio_model",
+                version=self.model_version,
+                progress=True,
+                skip_validation=True,
+                adaptor_names='dino_v2'
+            )
+
+            # extract its feature converter weights
+            self.spatial_feature_converter = dummy_model.adaptors["dino_v2"].feat_mlp
+
+            # update the embedding dimension because the feature have been projected
+            self.enc_embed_dim = self.spatial_feature_converter.final[-1].out_features
+
+            del dummy_model
+        else:
+            raise ValueError("Unsupported feature adaptor. Supported: dino_v2")
 
     def forward(
         self, encoder_input: ViTEncoderInput
@@ -215,30 +243,46 @@ class RADIOIntermediateFeatureReturner(RADIOEncoder, IntermediateFeatureReturner
             return_prefix_tokens=False,
             norm=self.norm_intermediate,
             stop_early=self.stop_early,
-            output_fmt="NCHW",
+            output_fmt="NLC",
             intermediates_only=self.intermediates_only,
         )
 
         # Extract the final features and intermediate features accordingly
+        final_features, intermediate_features = None, None
         if self.intermediates_only:
-            intermediate_features = [
-                ViTEncoderOutput(features=intermediate_output.features) for intermediate_output in outputs
-            ]
+            intermediate_features = outputs
+        else:
+            final_features = outputs[0].features.contiguous()
+            intermediate_features = outputs[1]
+        
+        # Optionally convert the features using the feature adaptor
+        if self.feature_adaptor is not None:
+            
+            Hp, Wp = height // self.patch_size, width // self.patch_size
+
+            # convert final features
+            if final_features is not None:
+                final_features = self.spatial_feature_converter(final_features)
+                
+                # convert to BCHW and package
+                final_features = final_features.view(batch_size, Hp, Wp, -1).permute(0, 3, 1, 2)
+                final_features = ViTEncoderOutput(features=final_features)
+
+            # convert intermediate features
+            if intermediate_features is not None:
+                num_intermediate = len(intermediate_features)
+                all_intermediate_feats_tensor = torch.cat(intermediate_features, dim=0)
+                all_intermediate_feats_tensor = self.spatial_feature_converter(all_intermediate_feats_tensor)
+                # convert to BCHW
+                all_intermediate_feats_tensor = all_intermediate_feats_tensor.view(num_intermediate * batch_size, Hp, Wp, -1).permute(0, 3, 1, 2)
+                all_intermediate_feats = torch.chunk(all_intermediate_feats_tensor, num_intermediate, dim=0)
+                intermediate_features = [ViTEncoderOutput(features=x) for x in all_intermediate_feats]
+
+        # return the final features and intermediate features accordingly
+        if self.intermediates_only:
             return intermediate_features
         else:
-            final_features = outputs[0].features[
-                :, self.model.model.patch_generator.num_skip :
-            ]  # Workaround for RADIO's incomplete forward_intermediates implementation
-            final_features = final_features.permute(0, 2, 1)
-            final_features = final_features.reshape(
-                -1, self.enc_embed_dim, height // self.patch_size, width // self.patch_size
-            ).contiguous()
-            final_features = ViTEncoderOutput(features=final_features)
-            intermediate_features = [
-                ViTEncoderOutput(features=intermediate_output) for intermediate_output in outputs[1].features
-            ]
             return final_features, intermediate_features
-
 
 if __name__ == "__main__":
     # Init different versions of the RADIO Encoder
@@ -292,7 +336,7 @@ if __name__ == "__main__":
         ), "Final features and intermediate features must be different"
 
     radio_intermediate_feature_returner = RADIOIntermediateFeatureReturner(
-        name="RADIOv2.5", model_version="radio_v2.5-b", norm_intermediate=True, intermediates_only=False
+        name="RADIOv2.5", model_version="radio_v2.5-b", norm_intermediate=True, intermediates_only=False, feature_adaptor="dino_v2"
     )
     dummy_input = ViTEncoderInput(image=torch.randn(1, 3, 224, 224), data_norm_type="radio")
     output = radio_intermediate_feature_returner(dummy_input)
