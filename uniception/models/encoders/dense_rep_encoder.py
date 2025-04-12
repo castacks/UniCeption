@@ -65,7 +65,7 @@ class DenseRepresentationEncoder(UniCeptionViTEncoderBase):
         intermediate_dims: List[int] = [588, 768, 1024],
         data_norm_type: str = "dense_rep_encoder",
         act_layer: Type[nn.Module] = nn.GELU,
-        norm_layer: Optional[Callable] = None,
+        norm_layer: Optional[Callable] = partial(nn.LayerNorm, eps=1e-6),
         post_pe_norm_layer: Optional[Callable] = partial(nn.LayerNorm, eps=1e-6),
         interpolate_antialias: bool = False,
         interpolate_offset: float = 0.1,
@@ -136,10 +136,10 @@ class DenseRepresentationEncoder(UniCeptionViTEncoderBase):
         self.encoder = nn.Sequential(*layers)
 
         # Init norm layer after encoder if required
-        self.norm = norm_layer(enc_embed_dim) if norm_layer else nn.Identity()
-        if isinstance(self.norm, nn.LayerNorm):
-            nn.init.constant_(self.norm.bias, 0)
-            nn.init.constant_(self.norm.weight, 1.0)
+        self.norm_layer = norm_layer(enc_embed_dim) if norm_layer else nn.Identity()
+        if isinstance(self.norm_layer, nn.LayerNorm):
+            nn.init.constant_(self.norm_layer.bias, 0)
+            nn.init.constant_(self.norm_layer.weight, 1.0)
 
         if self.apply_pe:
             # Init the patch resolution details required for positional encoding
@@ -254,6 +254,7 @@ class DenseRepresentationEncoder(UniCeptionViTEncoderBase):
         # Check the dtype and shape of the input
         assert isinstance(input_data, torch.Tensor), "Input must be a torch.Tensor"
         assert input_data.ndim == 4, "Input must be of shape (B, C, H, W)"
+        assert input_data.shape[1] == self.in_chans, f"Input channels must be {self.in_chans}"
         batch_size, channels, height, width = input_data.shape
         assert (
             height % self.patch_size == 0 and width % self.patch_size == 0
@@ -266,7 +267,7 @@ class DenseRepresentationEncoder(UniCeptionViTEncoderBase):
         features = features.flatten(2).transpose(
             1, 2
         )  # (B, E, H / Patch_Size, W / Patch_Size) -> (B, H / Patch_Size * W / Patch_Size, E)
-        features = self.norm(features)  # Normalize the features after patch encoding
+        features = self.norm_layer(features)  # Normalize the features after patch encoding
 
         # Apply positional encoding if required
         if self.apply_pe:

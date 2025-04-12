@@ -24,6 +24,18 @@ class EncoderOutput:
     pass
 
 
+@dataclass
+class EncoderGlobalRepInput:
+    "Data class for Encoder Global Representation Input"
+    data: Float[Tensor, "batch channel"]
+
+
+@dataclass
+class EncoderGlobalRepOutput:
+    "Data class for Encoder Global Representation Output"
+    features: Float[Tensor, "batch enc_embed_dim"]
+
+
 class UniCeptionEncoderBase(nn.Module):
     "Encoder Base Class for UniCeption"
 

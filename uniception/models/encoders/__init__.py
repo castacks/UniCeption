@@ -5,15 +5,18 @@ Encoder Factory for UniCeption
 import os
 
 from uniception.models.encoders.base import (
+    EncoderGlobalRepInput,
     EncoderInput,
     UniCeptionEncoderBase,
     UniCeptionViTEncoderBase,
     ViTEncoderInput,
+    ViTEncoderNonImageInput,
     ViTEncoderOutput,
 )
 from uniception.models.encoders.croco import CroCoEncoder
 from uniception.models.encoders.dense_rep_encoder import DenseRepresentationEncoder
 from uniception.models.encoders.dinov2 import DINOv2Encoder
+from uniception.models.encoders.global_rep_encoder import GlobalRepresentationEncoder
 from uniception.models.encoders.patch_embedder import PatchEmbedder
 from uniception.models.encoders.radio import RADIOEncoder
 
@@ -30,6 +33,10 @@ ENCODER_CONFIGS = {
     "dinov2": {
         "class": DINOv2Encoder,
         "supported_models": ["DINOv2", "DINOv2-Registers", "DINOv2-Depth-Anythingv2"],
+    },
+    "global_rep_encoder": {
+        "class": GlobalRepresentationEncoder,
+        "supported_models": ["Global-Representation-Encoder"],
     },
     "patch_embedder": {
         "class": PatchEmbedder,
