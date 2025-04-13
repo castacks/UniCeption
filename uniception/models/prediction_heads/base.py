@@ -54,7 +54,7 @@ class AdaptorInput:
 
 @dataclass
 class AdaptorOutput:
-    pass
+    value: Float[Tensor, "batch_size sliced_channels ..."]
 
 
 @dataclass

@@ -11,6 +11,7 @@ import torch
 import torch.nn as nn
 from uniception.models.prediction_heads import (
     AdaptorInput,
+    AdaptorOutput,
     Covariance2DAdaptorOutput,
     MaskAdaptorOutput,
     RegressionAdaptorOutput,
@@ -207,7 +208,7 @@ class ScaleAdaptor(UniCeptionAdaptorBase):
         if not self.no_bounds:
             output_scale_factor = output_scale_factor.clip(self.vmin, self.vmax)
 
-        return RegressionAdaptorOutput(value=output_scale_factor)
+        return AdaptorOutput(value=output_scale_factor)
 
 
 class DepthAdaptor(UniCeptionAdaptorBase):
@@ -539,7 +540,7 @@ class CamTranslationAdaptor(UniCeptionAdaptorBase):
         if not self.no_bounds:
             output_cam_trans = output_cam_trans.clip(self.vmin, self.vmax)
 
-        return RegressionAdaptorOutput(value=output_cam_trans)
+        return AdaptorOutput(value=output_cam_trans)
 
 
 class QuaternionsAdaptor(UniCeptionAdaptorBase):
@@ -590,7 +591,7 @@ class QuaternionsAdaptor(UniCeptionAdaptorBase):
             output_quats_norm = output_quaternions.norm(dim=1, keepdim=True).clip(min=1e-8)
             output_quaternions = output_quaternions / output_quats_norm
 
-        return RegressionAdaptorOutput(value=output_quaternions)
+        return AdaptorOutput(value=output_quaternions)
 
 
 class CamTranslationPlusQuatsAdaptor(UniCeptionAdaptorBase):
@@ -637,7 +638,7 @@ class CamTranslationPlusQuatsAdaptor(UniCeptionAdaptorBase):
         output_quaternions = self.quaternions_adaptor(quaternions_adaptor_input)
         output = torch.cat([output_cam_trans.value, output_quaternions.value], dim=1)
 
-        return RegressionAdaptorOutput(value=output)
+        return AdaptorOutput(value=output)
 
 
 class RayMapAdaptor(UniCeptionAdaptorBase):
