@@ -228,7 +228,7 @@ class DepthAdaptor(UniCeptionAdaptorBase):
         self.vmin = vmin
         self.vmax = vmax
 
-        self.no_bounds = (vmin == 0) and (vmax == float("inf"))
+        self.no_bounds = (vmin == -float("inf")) and (vmax == float("inf"))
 
     def forward(self, adaptor_input: AdaptorInput):
         """
