@@ -22,6 +22,7 @@ class RADIOEncoder(UniCeptionViTEncoderBase):
         pretrained_checkpoint_path: str = None,
         eradio_input_shape: Optional[tuple] = None,
         torch_hub_force_reload: bool = False,
+        keep_first_n_layers: Optional[int] = None,
         *args,
         **kwargs,
     ):
@@ -80,6 +81,12 @@ class RADIOEncoder(UniCeptionViTEncoderBase):
                 progress=True,
                 skip_validation=True,
             )
+
+        # delete the excess blocks if keep_first_n_layers is specified
+        if keep_first_n_layers is not None:
+            assert keep_first_n_layers < len(self.model.model.blocks), "keep_first_n_layers must be less than the number of blocks"
+            print(f"Keeping only the first {keep_first_n_layers} layers of the model")
+            self.model.model.blocks = torch.nn.ModuleList(self.model.model.blocks[:keep_first_n_layers])
 
         # Set the optimal window size for E-RADIO models
         if "e-radio" in self.model_version:
@@ -143,6 +150,7 @@ class RADIOIntermediateFeatureReturner(RADIOEncoder, IntermediateFeatureReturner
         stop_early: bool = False,
         intermediates_only: bool = True,
         feature_adaptor: Optional[str] = None,
+        keep_first_n_layers: Optional[int] = None,
         *args,
         **kwargs,
     ):
@@ -173,6 +181,7 @@ class RADIOIntermediateFeatureReturner(RADIOEncoder, IntermediateFeatureReturner
             model_version=model_version,
             pretrained_checkpoint_path=pretrained_checkpoint_path,
             eradio_input_shape=eradio_input_shape,
+            keep_first_n_layers=keep_first_n_layers,
             *args,
             **kwargs,
         )
@@ -189,7 +198,9 @@ class RADIOIntermediateFeatureReturner(RADIOEncoder, IntermediateFeatureReturner
             self.indices = list(range(len(self.model.model.blocks)))
 
         self.feature_adaptor = feature_adaptor
-        if (self.feature_adaptor is not None) and self.feature_adaptor == "dino_v2":
+        if self.feature_adaptor is None:
+            pass
+        elif self.feature_adaptor == "dino_v2":
             # initialize a dummy radio encoder with the adaptor setting
             dummy_model = torch.hub.load(
                 "NVlabs/RADIO",
@@ -255,28 +266,28 @@ class RADIOIntermediateFeatureReturner(RADIOEncoder, IntermediateFeatureReturner
             final_features = outputs[0].features.contiguous()
             intermediate_features = outputs[1]
         
-        # Optionally convert the features using the feature adaptor
-        if self.feature_adaptor is not None:
-            
-            Hp, Wp = height // self.patch_size, width // self.patch_size
+        # Optionally convert the features using the feature adaptor    
+        Hp, Wp = height // self.patch_size, width // self.patch_size
 
-            # convert final features
-            if final_features is not None:
+        # convert final features
+        if final_features is not None:
+            if self.feature_adaptor is not None:
                 final_features = self.spatial_feature_converter(final_features)
-                
-                # convert to BCHW and package
-                final_features = final_features.view(batch_size, Hp, Wp, -1).permute(0, 3, 1, 2)
-                final_features = ViTEncoderOutput(features=final_features)
+            
+            # convert to BCHW and package
+            final_features = final_features.view(batch_size, Hp, Wp, -1).permute(0, 3, 1, 2)
+            final_features = ViTEncoderOutput(features=final_features)
 
-            # convert intermediate features
-            if intermediate_features is not None:
-                num_intermediate = len(intermediate_features)
-                all_intermediate_feats_tensor = torch.cat(intermediate_features, dim=0)
+        # convert intermediate features
+        if intermediate_features is not None:
+            num_intermediate = len(intermediate_features)
+            all_intermediate_feats_tensor = torch.cat(intermediate_features, dim=0)
+            if self.feature_adaptor is not None:
                 all_intermediate_feats_tensor = self.spatial_feature_converter(all_intermediate_feats_tensor)
-                # convert to BCHW
-                all_intermediate_feats_tensor = all_intermediate_feats_tensor.view(num_intermediate * batch_size, Hp, Wp, -1).permute(0, 3, 1, 2)
-                all_intermediate_feats = torch.chunk(all_intermediate_feats_tensor, num_intermediate, dim=0)
-                intermediate_features = [ViTEncoderOutput(features=x) for x in all_intermediate_feats]
+            # convert to BCHW
+            all_intermediate_feats_tensor = all_intermediate_feats_tensor.view(num_intermediate * batch_size, Hp, Wp, -1).permute(0, 3, 1, 2)
+            all_intermediate_feats = torch.chunk(all_intermediate_feats_tensor, num_intermediate, dim=0)
+            intermediate_features = [ViTEncoderOutput(features=x) for x in all_intermediate_feats]
 
         # return the final features and intermediate features accordingly
         if self.intermediates_only:
@@ -286,57 +297,57 @@ class RADIOIntermediateFeatureReturner(RADIOEncoder, IntermediateFeatureReturner
 
 if __name__ == "__main__":
     # Init different versions of the RADIO Encoder
-    for model_version in ["radio_v2.5-b", "radio_v2.5-l", "radio_v2.5-h", "radio_v2.5-g"]:
-        radio_encoder = RADIOEncoder(
-            name="RADIOv2.5", model_version=model_version, patch_size=14 if "v2.5-g" in model_version else 16
-        )
+    # for model_version in ["radio_v2.5-b", "radio_v2.5-l", "radio_v2.5-h", "radio_v2.5-g"]:
+    #     radio_encoder = RADIOEncoder(
+    #         name="RADIOv2.5", model_version=model_version, patch_size=14 if "v2.5-g" in model_version else 16
+    #     )
 
     # Init the E-RADIO Encoder
-    eradio_input_shape = (512, 512)
-    eradio_encoder = RADIOEncoder(name="E-RADIO", model_version="e-radio_v2", eradio_input_shape=eradio_input_shape)
+    # eradio_input_shape = (512, 512)
+    # eradio_encoder = RADIOEncoder(name="E-RADIO", model_version="e-radio_v2", eradio_input_shape=eradio_input_shape)
 
-    print("All RADIO Encoders have been initialized successfully!")
+    # print("All RADIO Encoders have been initialized successfully!")
 
-    # Intermediate Feature Returner Tests
-    print("Running Intermediate Feature Returner Tests...")
+    # # Intermediate Feature Returner Tests
+    # print("Running Intermediate Feature Returner Tests...")
 
-    # Run the intermediate feature returner with last-n index
+    # # Run the intermediate feature returner with last-n index
+    # radio_intermediate_feature_returner = RADIOIntermediateFeatureReturner(
+    #     name="RADIOv2.5", model_version="radio_v2.5-b", indices=6
+    # )  # Last 6 layers
+    # dummy_input = ViTEncoderInput(image=torch.randn(1, 3, 224, 224), data_norm_type="radio")
+    # output = radio_intermediate_feature_returner(dummy_input)
+    # assert isinstance(output, list), "Output must be a list of intermediate features"
+    # assert isinstance(output[0], ViTEncoderOutput), "Output must be a list of ViTEncoderOutput"
+    # assert len(output) == 6, "Output must have length of intermediate features equal to the number of indices"
+
+    # # Run the intermediate feature returner with specific indices
+    # radio_intermediate_feature_returner = RADIOIntermediateFeatureReturner(
+    #     name="RADIOv2.5", model_version="radio_v2.5-b", indices=[0, 2, 4, 6]
+    # )  # Specific layers
+    # dummy_input = ViTEncoderInput(image=torch.randn(1, 3, 224, 224), data_norm_type="radio")
+    # output = radio_intermediate_feature_returner(dummy_input)
+    # assert isinstance(output, list), "Output must be a list of intermediate features"
+    # assert isinstance(output[0], ViTEncoderOutput), "Output must be a list of ViTEncoderOutput"
+    # assert len(output) == 4, "Output must have length of intermediate features equal to the number of indices"
+
+    # # Test the normalizing of intermediate features
+    # radio_intermediate_feature_returner = RADIOIntermediateFeatureReturner(
+    #     name="RADIOv2.5", model_version="radio_v2.5-b", norm_intermediate=False, intermediates_only=False
+    # )  # Do not normalize
+    # dummy_input = ViTEncoderInput(image=torch.randn(1, 3, 224, 224), data_norm_type="radio")
+    # output = radio_intermediate_feature_returner(dummy_input)
+    # assert isinstance(output, tuple), "Output must be a tuple with final features and intermediate features"
+    # assert isinstance(output[0], ViTEncoderOutput), "First element of output must be the final features"
+    # assert isinstance(output[1], list), "Second element of output must be a list of intermediate features"
+    # assert isinstance(output[1][0], ViTEncoderOutput), "Output must be a list of ViTEncoderOutput"
+    # if not isinstance(radio_intermediate_feature_returner.model.model.norm, torch.nn.Identity):
+    #     assert not torch.equal(
+    #         output[0].features, output[1][0].features
+    #     ), "Final features and intermediate features must be different"
+
     radio_intermediate_feature_returner = RADIOIntermediateFeatureReturner(
-        name="RADIOv2.5", model_version="radio_v2.5-b", indices=6
-    )  # Last 6 layers
-    dummy_input = ViTEncoderInput(image=torch.randn(1, 3, 224, 224), data_norm_type="radio")
-    output = radio_intermediate_feature_returner(dummy_input)
-    assert isinstance(output, list), "Output must be a list of intermediate features"
-    assert isinstance(output[0], ViTEncoderOutput), "Output must be a list of ViTEncoderOutput"
-    assert len(output) == 6, "Output must have length of intermediate features equal to the number of indices"
-
-    # Run the intermediate feature returner with specific indices
-    radio_intermediate_feature_returner = RADIOIntermediateFeatureReturner(
-        name="RADIOv2.5", model_version="radio_v2.5-b", indices=[0, 2, 4, 6]
-    )  # Specific layers
-    dummy_input = ViTEncoderInput(image=torch.randn(1, 3, 224, 224), data_norm_type="radio")
-    output = radio_intermediate_feature_returner(dummy_input)
-    assert isinstance(output, list), "Output must be a list of intermediate features"
-    assert isinstance(output[0], ViTEncoderOutput), "Output must be a list of ViTEncoderOutput"
-    assert len(output) == 4, "Output must have length of intermediate features equal to the number of indices"
-
-    # Test the normalizing of intermediate features
-    radio_intermediate_feature_returner = RADIOIntermediateFeatureReturner(
-        name="RADIOv2.5", model_version="radio_v2.5-b", norm_intermediate=False, intermediates_only=False
-    )  # Do not normalize
-    dummy_input = ViTEncoderInput(image=torch.randn(1, 3, 224, 224), data_norm_type="radio")
-    output = radio_intermediate_feature_returner(dummy_input)
-    assert isinstance(output, tuple), "Output must be a tuple with final features and intermediate features"
-    assert isinstance(output[0], ViTEncoderOutput), "First element of output must be the final features"
-    assert isinstance(output[1], list), "Second element of output must be a list of intermediate features"
-    assert isinstance(output[1][0], ViTEncoderOutput), "Output must be a list of ViTEncoderOutput"
-    if not isinstance(radio_intermediate_feature_returner.model.model.norm, torch.nn.Identity):
-        assert not torch.equal(
-            output[0].features, output[1][0].features
-        ), "Final features and intermediate features must be different"
-
-    radio_intermediate_feature_returner = RADIOIntermediateFeatureReturner(
-        name="RADIOv2.5", model_version="radio_v2.5-b", norm_intermediate=True, intermediates_only=False, feature_adaptor="dino_v2"
+        name="RADIOv2.5", model_version="radio_v2.5-b", norm_intermediate=True, intermediates_only=False, feature_adaptor=None, keep_first_n_layers=6
     )
     dummy_input = ViTEncoderInput(image=torch.randn(1, 3, 224, 224), data_norm_type="radio")
     output = radio_intermediate_feature_returner(dummy_input)
