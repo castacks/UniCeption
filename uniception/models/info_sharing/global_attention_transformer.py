@@ -222,9 +222,6 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
             batch_size, num_of_views * height * width, self.input_embed_dim
         ).contiguous()
 
-        # Project input features to the transformer dimension
-        multi_view_features = self.proj_embed(multi_view_features)
-
         # Process additional input tokens if provided
         if model_input.additional_input_tokens is not None:
             additional_tokens = model_input.additional_input_tokens
@@ -234,12 +231,14 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
             ), f"Additional tokens must have input dimension {self.input_embed_dim}"
             assert additional_tokens.shape[0] == batch_size, "Batch size mismatch for additional tokens"
 
-            # Project additional tokens to match the transformer dimension
-            additional_tokens = additional_tokens.permute(0, 2, 1)  # (N, C, T) -> (N, T, C)
-            additional_tokens = self.proj_embed(additional_tokens)
+            # Reshape to channel-last format for transformer processing
+            additional_tokens = additional_tokens.permute(0, 2, 1).contiguous()  # (N, C, T) -> (N, T, C)
 
             # Concatenate the additional tokens to the multi-view features
             multi_view_features = torch.cat([multi_view_features, additional_tokens], dim=1)
+
+        # Project input features to the transformer dimension
+        multi_view_features = self.proj_embed(multi_view_features)
 
         # Create patch positions for each view if custom positional encoding is used
         if self.custom_positional_encoding is not None:
@@ -306,7 +305,7 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
         # Extract and return additional token features if provided
         if model_input.additional_input_tokens is not None:
             additional_token_features = output_multi_view_features[:, num_of_views * num_of_tokens_per_view :, :]
-            additional_token_features = additional_token_features.permute(0, 2, 1)  # (N, C, T)
+            additional_token_features = additional_token_features.permute(0, 2, 1).contiguous()  # (N, C, T)
             return MultiViewTransformerOutput(
                 features=view_features, additional_token_features=additional_token_features
             )
@@ -462,9 +461,6 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
             batch_size, num_of_views * height * width, self.input_embed_dim
         ).contiguous()
 
-        # Project input features to the transformer dimension
-        multi_view_features = self.proj_embed(multi_view_features)
-
         # Process additional input tokens if provided
         if model_input.additional_input_tokens is not None:
             additional_tokens = model_input.additional_input_tokens
@@ -474,12 +470,14 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
             ), f"Additional tokens must have input dimension {self.input_embed_dim}"
             assert additional_tokens.shape[0] == batch_size, "Batch size mismatch for additional tokens"
 
-            # Project additional tokens to match the transformer dimension
-            additional_tokens = additional_tokens.permute(0, 2, 1)  # (N, C, T) -> (N, T, C)
-            additional_tokens = self.proj_embed(additional_tokens)
+            # Reshape to channel-last format for transformer processing
+            additional_tokens = additional_tokens.permute(0, 2, 1).contiguous()  # (N, C, T) -> (N, T, C)
 
             # Concatenate the additional tokens to the multi-view features
             multi_view_features = torch.cat([multi_view_features, additional_tokens], dim=1)
+
+        # Project input features to the transformer dimension
+        multi_view_features = self.proj_embed(multi_view_features)
 
         # Create patch positions for each view if custom positional encoding is used
         if self.custom_positional_encoding is not None:
@@ -543,7 +541,7 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
             additional_token_features = None
             if model_input.additional_input_tokens is not None:
                 additional_token_features = current_features[:, num_of_views * num_of_tokens_per_view :, :]
-                additional_token_features = additional_token_features.permute(0, 2, 1)  # (N, C, T)
+                additional_token_features = additional_token_features.permute(0, 2, 1).contiguous()  # (N, C, T)
                 # Only keep the view features for reshaping
                 current_features = current_features[:, : num_of_views * num_of_tokens_per_view, :]
 
@@ -574,7 +572,7 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
         additional_token_features = None
         if model_input.additional_input_tokens is not None:
             additional_token_features = output_multi_view_features[:, num_of_views * num_of_tokens_per_view :, :]
-            additional_token_features = additional_token_features.permute(0, 2, 1)  # (N, C, T)
+            additional_token_features = additional_token_features.permute(0, 2, 1).contiguous()  # (N, C, T)
             view_features = output_multi_view_features[:, : num_of_views * num_of_tokens_per_view, :]
         else:
             view_features = output_multi_view_features
@@ -780,9 +778,6 @@ class GlobalAttentionTransformer(UniCeptionInfoSharingBase):
         # Stack the multi-set features along the number of tokens dimension
         multi_set_features = torch.cat(multi_set_features, dim=1)
 
-        # Project input features to the transformer dimension
-        multi_set_features = self.proj_embed(multi_set_features)
-
         # Process additional input tokens if provided
         if model_input.additional_input_tokens is not None:
             additional_tokens = model_input.additional_input_tokens
@@ -792,12 +787,14 @@ class GlobalAttentionTransformer(UniCeptionInfoSharingBase):
             ), f"Additional tokens must have input dimension {self.input_embed_dim}"
             assert additional_tokens.shape[0] == batch_size, "Batch size mismatch for additional tokens"
 
-            # Project additional tokens to match the transformer dimension
-            additional_tokens = additional_tokens.permute(0, 2, 1)  # (N, C, T) -> (N, T, C)
-            additional_tokens = self.proj_embed(additional_tokens)
+            # Reshape to channel-last format for transformer processing
+            additional_tokens = additional_tokens.permute(0, 2, 1).contiguous()  # (N, C, T) -> (N, T, C)
 
             # Concatenate the additional tokens to the multi-set features
             multi_set_features = torch.cat([multi_set_features, additional_tokens], dim=1)
+
+        # Project input features to the transformer dimension
+        multi_set_features = self.proj_embed(multi_set_features)
 
         # Create dummy patch positions for each set
         multi_set_positions = [None] * num_of_sets
@@ -851,7 +848,9 @@ class GlobalAttentionTransformer(UniCeptionInfoSharingBase):
         additional_token_features = None
         if model_input.additional_input_tokens is not None:
             additional_token_features = output_multi_set_features[:, sum(num_of_tokens_per_set) :, :]
-            additional_token_features = additional_token_features.permute(0, 2, 1)  # (N, T, C) -> (N, C, T)
+            additional_token_features = additional_token_features.permute(
+                0, 2, 1
+            ).contiguous()  # (N, T, C) -> (N, C, T)
             # Only keep the set features for reshaping
             output_multi_set_features = output_multi_set_features[:, : sum(num_of_tokens_per_set), :]
 
