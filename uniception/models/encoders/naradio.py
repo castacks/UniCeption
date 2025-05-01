@@ -2,17 +2,17 @@
 Encoder Class for NARADIO (RayFronts)
 """
 
+import math
 from typing import List, Tuple, Union
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import math
+from torch.nn.attention.flex_attention import flex_attention
 
 from uniception.models.encoders.base import UniCeptionViTEncoderBase, ViTEncoderInput, ViTEncoderOutput
-from uniception.models.utils.intermediate_feature_return import IntermediateFeatureReturner, FeatureWrapper
+from uniception.models.utils.intermediate_feature_return import FeatureWrapper, IntermediateFeatureReturner
 
-from torch.nn.attention.flex_attention import flex_attention
 
 class GaussKernelAttn(nn.Module):
     """Implementation of Gaussian Kernel based Attention using FlexAttention"""
@@ -32,7 +32,7 @@ class GaussKernelAttn(nn.Module):
         assert dim % num_heads == 0, "dim should be divisible by num_heads"
         self.num_heads = num_heads
         self.head_dim = dim // num_heads
-        self.scale = self.head_dim ** -0.5
+        self.scale = self.head_dim**-0.5
 
         self.addition_cache = dict()
         self.input_resolution = input_resolution
@@ -46,24 +46,20 @@ class GaussKernelAttn(nn.Module):
         self.proj = orig_attn.proj
         self.proj_drop = orig_attn.proj_drop
         self.num_prefix_tokens = num_prefix_tokens
-        
+
         # Cache for Gaussian window addition
         self.cached_addition = None
         self.cached_n_patches = None
 
     @staticmethod
-    def gaussian_window(dim1, dim2, std=7.):
+    def gaussian_window(dim1, dim2, std=7.0):
         constant = 1 / (std * math.sqrt(2))
         ks = list()
         for dim in [dim1, dim2]:
             start = -(dim - 1) / 2.0
-            k = torch.linspace(start=start * constant,
-                              end=(start + (dim - 1)) * constant,
-                              steps=dim,
-                              dtype=torch.float)
+            k = torch.linspace(start=start * constant, end=(start + (dim - 1)) * constant, steps=dim, dtype=torch.float)
             ks.append(k)
-        dist_square_to_mu = (torch.stack(torch.meshgrid(
-            *ks, indexing="ij")) ** 2).sum(0)
+        dist_square_to_mu = (torch.stack(torch.meshgrid(*ks, indexing="ij")) ** 2).sum(0)
 
         return torch.exp(-dist_square_to_mu)
 
@@ -71,17 +67,12 @@ class GaussKernelAttn(nn.Module):
     def get_attention_addition(dim1, dim2, window, num_prefix_tokens=8):
         m = torch.einsum("ij,kl->ijkl", torch.eye(dim1), torch.eye(dim2))
         m = m.permute((0, 3, 1, 2)).contiguous()
-        out = F.conv2d(m.view(-1, dim1, dim2).unsqueeze(1),
-                      window.unsqueeze(0).unsqueeze(1),
-                      padding='same').squeeze(1)
+        out = F.conv2d(m.view(-1, dim1, dim2).unsqueeze(1), window.unsqueeze(0).unsqueeze(1), padding="same").squeeze(1)
 
         out = out.view(dim1 * dim2, dim1 * dim2)
         if num_prefix_tokens > 0:
-            v_adjusted = torch.vstack(
-                [torch.zeros((num_prefix_tokens, dim1 * dim2)), out])
-            out = torch.hstack(
-                [torch.zeros((dim1 * dim2 + num_prefix_tokens, num_prefix_tokens)),
-                v_adjusted])
+            v_adjusted = torch.vstack([torch.zeros((num_prefix_tokens, dim1 * dim2)), out])
+            out = torch.hstack([torch.zeros((dim1 * dim2 + num_prefix_tokens, num_prefix_tokens)), v_adjusted])
 
         return out
 
@@ -90,13 +81,11 @@ class GaussKernelAttn(nn.Module):
         if self.cached_n_patches != n_patches:
             window_size = [side * 2 - 1 for side in n_patches]
             window = self.gaussian_window(*window_size, std=self.gauss_std)
-            addition = self.get_attention_addition(
-                *n_patches, window, self.num_prefix_tokens
-            ).to(device)
-            
+            addition = self.get_attention_addition(*n_patches, window, self.num_prefix_tokens).to(device)
+
             self.cached_addition = addition
             self.cached_n_patches = n_patches
-            
+
         return self.cached_addition
 
     def gauss_score_mod(self, score, b, h, q_idx, kv_idx, addition):
@@ -108,37 +97,36 @@ class GaussKernelAttn(nn.Module):
         B, N, C = x.shape
         h, w = self.input_resolution
         n_patches = (w // 16, h // 16)
-        
+
         qkv = self.qkv(x)
         q, k, v = qkv.chunk(3, dim=-1)
         q, k = self.q_norm(q), self.k_norm(k)
-        
+
         q = q.reshape(B, N, self.num_heads, self.head_dim).permute(0, 2, 1, 3)
         k = k.reshape(B, N, self.num_heads, self.head_dim).permute(0, 2, 1, 3)
         v = v.reshape(B, N, self.num_heads, self.head_dim).permute(0, 2, 1, 3)
-        
+
         addition = self.prepare_gaussian_addition(n_patches, device=x.device)
-        
+
         # Create a score_mod function with the current addition matrix
-        score_mod = lambda score, b, h, q_idx, kv_idx: self.gauss_score_mod(
-            score, b, h, q_idx, kv_idx, addition)
-        
+        score_mod = lambda score, b, h, q_idx, kv_idx: self.gauss_score_mod(score, b, h, q_idx, kv_idx, addition)
+
         # Use FlexAttention
         attn_output = flex_attention(q, k, v, score_mod=score_mod)
-        
+
         # Reshape output and apply projection
         attn_output = attn_output.transpose(1, 2).reshape(B, N, C)
         attn_output = self.proj(attn_output)
         attn_output = self.proj_drop(attn_output)
-        
+
         return attn_output
 
 
 class NARADIOEncoder(UniCeptionViTEncoderBase):
-    """ UniCeption NARADIO Encoder based on NACLIP + RADIO models
+    """UniCeption NARADIO Encoder based on NACLIP + RADIO models
 
     The model modifies the attention of the last layer of RADIO following the
-    example of NACLIP improving spatial structure. And uses the Summary CLS 
+    example of NACLIP improving spatial structure. And uses the Summary CLS
     projection to project the patch-wise tokens to SIGLIP or CLIP language aligned
     feature spaces. The model computes na-radio spatial or global features by
     default and exposes functions to project those features to Siglip, or CLIP
@@ -151,7 +139,7 @@ class NARADIOEncoder(UniCeptionViTEncoderBase):
         data_norm_type: str = "radio",
         patch_size: int = 16,
         model_version: str = "radio_v2.5-l",
-        input_resolution: Tuple[int,int] = [512,512],
+        input_resolution: Tuple[int, int] = [512, 512],
         gauss_std: float = 7.0,
         pretrained_checkpoint_path: str = None,
         torch_hub_force_reload: bool = False,
@@ -210,7 +198,7 @@ class NARADIOEncoder(UniCeptionViTEncoderBase):
             print(self.load_state_dict(ckpt["model"]))
 
         self.enc_embed_dim = self.model.model.embed_dim
-        
+
         # Replace the attention of the last ViT block with the Gaussian Kernel based attention
         self.model.model.blocks[-1] = GaussKernelAttn(
             self.model.model.blocks[-1].attn,
@@ -218,7 +206,8 @@ class NARADIOEncoder(UniCeptionViTEncoderBase):
             gauss_std,
             dim=self.enc_embed_dim,
             chosen_cls_id=None,
-            num_prefix_tokens=self.model.num_summary_tokens)
+            num_prefix_tokens=self.model.num_summary_tokens,
+        )
 
     def forward(self, encoder_input: ViTEncoderInput) -> ViTEncoderOutput:
         """
@@ -264,7 +253,7 @@ class NARADIOIntermediateFeatureReturner(NARADIOEncoder, IntermediateFeatureRetu
         data_norm_type: str = "radio",
         patch_size: int = 16,
         model_version: str = "radio_v2.5-l",
-        input_resolution: Tuple[int,int] = [512,512],
+        input_resolution: Tuple[int, int] = [512, 512],
         gauss_std: float = 7.0,
         pretrained_checkpoint_path: str = None,
         indices: Union[int, List[int]] = [-1],
@@ -338,40 +327,35 @@ class NARADIOIntermediateFeatureReturner(NARADIOEncoder, IntermediateFeatureRetu
         ), f"Input shape must be divisible by patch size: {self.patch_size}"
 
         # Extract the final features and intermediate features accordingly
+        model_outputs = self.model.forward_intermediates(
+            encoder_input.image,
+            indices=self.indices,
+            return_prefix_tokens=False,
+            norm=self.norm_intermediate,
+            stop_early=self.stop_early,
+            output_fmt="NCHW",
+            intermediates_only=self.intermediates_only,
+        )
+
         if self.intermediates_only:
-            outputs = self.model.forward_intermediates(
-                encoder_input.image,
-                indices=self.indices,
-                return_prefix_tokens=False,
-                norm=self.norm_intermediate,
-                stop_early=self.stop_early,
-                output_fmt="NCHW",
-                intermediates_only=self.intermediates_only,
-            )
-            outputs = [FeatureWrapper(o) for o in outputs]
-            intermediate_features = [
-                ViTEncoderOutput(features=intermediate_output.features) for intermediate_output in outputs
-            ]
-            return intermediate_features
+            outputs = model_outputs
+            final_features = None
         else:
-            final_output, outputs = self.model.forward_intermediates(
-                encoder_input.image,
-                indices=self.indices,
-                return_prefix_tokens=False,
-                norm=self.norm_intermediate,
-                stop_early=self.stop_early,
-                output_fmt="NCHW",
-                intermediates_only=self.intermediates_only,
-            )
-            outputs = [FeatureWrapper(o) for o in outputs]
+            final_output, outputs = model_outputs
             final_features = final_output.features
             final_features = final_features.reshape(
                 batch_size, -1, self.enc_embed_dim, height // self.patch_size, width // self.patch_size
             ).contiguous()
             final_features = ViTEncoderOutput(features=final_features)
-            intermediate_features = [
-                ViTEncoderOutput(features=intermediate_output.features) for intermediate_output in outputs
-            ]
+
+        outputs = [FeatureWrapper(o) for o in outputs]
+        intermediate_features = [
+            ViTEncoderOutput(features=intermediate_output.features) for intermediate_output in outputs
+        ]
+
+        if self.intermediates_only:
+            return intermediate_features
+        else:
             return final_features, intermediate_features
 
 

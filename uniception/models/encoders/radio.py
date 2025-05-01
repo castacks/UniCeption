@@ -7,7 +7,7 @@ from typing import List, Optional, Tuple, Union
 import torch
 
 from uniception.models.encoders.base import UniCeptionViTEncoderBase, ViTEncoderInput, ViTEncoderOutput
-from uniception.models.utils.intermediate_feature_return import IntermediateFeatureReturner, FeatureWrapper
+from uniception.models.utils.intermediate_feature_return import FeatureWrapper, IntermediateFeatureReturner
 
 
 class RADIOEncoder(UniCeptionViTEncoderBase):
@@ -197,40 +197,36 @@ class RADIOIntermediateFeatureReturner(RADIOEncoder, IntermediateFeatureReturner
             height % self.patch_size == 0 and width % self.patch_size == 0
         ), f"Input shape must be divisible by patch size: {self.patch_size}"
 
+        # Extract the final features and intermediate features accordingly
+        model_outputs = self.model.forward_intermediates(
+            encoder_input.image,
+            indices=self.indices,
+            return_prefix_tokens=False,
+            norm=self.norm_intermediate,
+            stop_early=self.stop_early,
+            output_fmt="NCHW",
+            intermediates_only=self.intermediates_only,
+        )
+
         if self.intermediates_only:
-            outputs = self.model.forward_intermediates(
-                encoder_input.image,
-                indices=self.indices,
-                return_prefix_tokens=False,
-                norm=self.norm_intermediate,
-                stop_early=self.stop_early,
-                output_fmt="NCHW",
-                intermediates_only=self.intermediates_only,
-            )
-            outputs = [FeatureWrapper(o) for o in outputs]
-            intermediate_features = [
-                ViTEncoderOutput(features=intermediate_output.features) for intermediate_output in outputs
-            ]
-            return intermediate_features
+            outputs = model_outputs
+            final_features = None
         else:
-            final_output, outputs = self.model.forward_intermediates(
-                encoder_input.image,
-                indices=self.indices,
-                return_prefix_tokens=False,
-                norm=self.norm_intermediate,
-                stop_early=self.stop_early,
-                output_fmt="NCHW",
-                intermediates_only=self.intermediates_only,
-            )
-            outputs = [FeatureWrapper(o) for o in outputs]
+            final_output, outputs = model_outputs
             final_features = final_output.features
             final_features = final_features.reshape(
                 batch_size, -1, self.enc_embed_dim, height // self.patch_size, width // self.patch_size
             ).contiguous()
             final_features = ViTEncoderOutput(features=final_features)
-            intermediate_features = [
-                ViTEncoderOutput(features=intermediate_output.features) for intermediate_output in outputs
-            ]
+
+        outputs = [FeatureWrapper(o) for o in outputs]
+        intermediate_features = [
+            ViTEncoderOutput(features=intermediate_output.features) for intermediate_output in outputs
+        ]
+
+        if self.intermediates_only:
+            return intermediate_features
+        else:
             return final_features, intermediate_features
 
 

@@ -84,10 +84,11 @@ def feature_take_indices(
 
     return take_indices, max(take_indices)
 
+
 class FeatureWrapper:
     def __init__(self, tensor):
         self.tensor = tensor
-        self.features = getattr(tensor, 'features', tensor)
+        self.features = getattr(tensor, "features", tensor)
 
     def __getattr__(self, attr):
         return getattr(self.tensor, attr)

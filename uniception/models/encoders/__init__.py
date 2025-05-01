@@ -13,8 +13,8 @@ from uniception.models.encoders.base import (
 )
 from uniception.models.encoders.croco import CroCoEncoder
 from uniception.models.encoders.dinov2 import DINOv2Encoder
-from uniception.models.encoders.radio import RADIOEncoder
 from uniception.models.encoders.naradio import NARADIOEncoder
+from uniception.models.encoders.radio import RADIOEncoder
 
 # Define encoder configurations
 ENCODER_CONFIGS = {
