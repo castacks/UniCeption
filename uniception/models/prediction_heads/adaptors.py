@@ -289,14 +289,22 @@ class PointMapAdaptor(UniCeptionAdaptorBase):
         output_xyz = None
 
         if self.mode != "linear":
-            # Compute distance to world origin
-            d = xyz.norm(dim=1, keepdim=True)
-            output_xyz = xyz / d.clip(min=1e-8)
-            # Scale the distance to world origin based on mode
             if self.mode == "square":
+                # Compute distance to world origin
+                d = xyz.norm(dim=1, keepdim=True)
+                output_xyz = xyz / d.clip(min=1e-8)
+                # Scale the distance to world origin based on mode
                 output_xyz = output_xyz * d.square()
             elif self.mode == "exp":
+                # Compute distance to world origin
+                d = xyz.norm(dim=1, keepdim=True)
+                output_xyz = xyz / d.clip(min=1e-8)
+                # Scale the distance to world origin based on mode
                 output_xyz = output_xyz * torch.expm1(d)
+            elif self.mode == "z_exp":
+                xy, z = xyz.split([2, 1], dim=1)
+                z = torch.exp(z)
+                output_xyz = torch.cat([xy * z, z], dim=1)
             else:
                 raise ValueError(f"Invalid mode: {self.mode}")
         else:
