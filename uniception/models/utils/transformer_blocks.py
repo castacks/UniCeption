@@ -88,6 +88,7 @@ class Mlp(nn.Module):
 
 class Attention(nn.Module):
     "Self-Attention Layer"
+
     fused_attn: Final[bool]
 
     def __init__(
@@ -172,6 +173,7 @@ class Attention(nn.Module):
 
 class CrossAttention(nn.Module):
     "Cross-Attention Layer"
+
     fused_attn: Final[bool]
 
     def __init__(

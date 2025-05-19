@@ -14,6 +14,10 @@ def script_add_rerun_args(parser: ArgumentParser) -> None:
     """
     Add common Rerun script arguments to `parser`.
 
+    Change Log from https://github.com/rerun-io/rerun/blob/29eb8954b08e59ff96943dc0677f46f7ea4ea734/rerun_py/rerun_sdk/rerun/script_helpers.py#L65:
+        - Added default portforwarding url for ease of use
+        - Update parser types
+
     Parameters
     ----------
     parser : ArgumentParser
@@ -43,10 +47,10 @@ def script_add_rerun_args(parser: ArgumentParser) -> None:
         help="Serve a web viewer (WARNING: experimental feature)",
     )
     parser.add_argument(
-        "--addr",
+        "--url",
         type=str,
-        default="0.0.0.0:<rr-port>",
-        help="Connect to this ip:port. Replace <rr-port> with the actual port number.",
+        default="rerun+http://127.0.0.1:<rr-port>/proxy",
+        help="Connect to this HTTP(S) URL. Replace <rr-port> with the actual port number.",
     )
     parser.add_argument("--save", type=str, default=None, help="Save data to a .rrd file at this path")
     parser.add_argument(
@@ -59,7 +63,7 @@ def script_add_rerun_args(parser: ArgumentParser) -> None:
 
 
 def init_rerun_args(
-    headless=True, connect=True, serve=False, addr="0.0.0.0:<rr-port>", save=None, stdout=False
+    headless=True, connect=True, serve=False, url="rerun+http://127.0.0.1:<rr-port>/proxy", save=None, stdout=False
 ) -> Namespace:
     """
     Initialize common Rerun script arguments.
@@ -72,8 +76,8 @@ def init_rerun_args(
         Connect to an external viewer, by default True
     serve : bool, optional
         Serve a web viewer (WARNING: experimental feature), by default False
-    addr : str, optional
-        Connect to this ip:port, by default "0.0.0.0:<rr-port>". Replace <rr-port> with the actual port number.
+    url : str, optional
+        Connect to this HTTP(S) URL, by default "rerun+http://127.0.0.1:<rr-port>/proxy". Replace <rr-port> with the actual port number.
     save : str, optional
         Save data to a .rrd file at this path, by default None
     stdout : bool, optional
@@ -88,7 +92,7 @@ def init_rerun_args(
     rerun_args.headless = headless
     rerun_args.connect = connect
     rerun_args.serve = serve
-    rerun_args.addr = addr
+    rerun_args.url = url
     rerun_args.save = save
     rerun_args.stdout = stdout
 

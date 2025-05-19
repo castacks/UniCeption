@@ -98,7 +98,7 @@ if __name__ == "__main__":
     # Set up Rerun for visualization
     if args.viz:
         rr.script_setup(args, f"UniCeption_DUSt3R_Inference")
-        rr.set_time_seconds("stable_time", 0)
+        rr.set_time("stable_time", sequence=0)
 
     # the reference data are collected under this setting.
     # may use (False, "high") to test the relative error at TF32 precision
@@ -254,6 +254,7 @@ if __name__ == "__main__":
                 ),
             )
             print(
-                "Visualizations logged to Rerun: http://localhost:<rr-viewer-port>?url=ws://localhost:<ws-server-port>. "
-                "Replace <rr-viewer-port> and <ws-server-port> with the actual ports."
+                "Visualizations logged to Rerun: rerun+http://127.0.0.1:<rr-port>/proxy."
+                "For example, to spawn viewer: rerun --connect rerun+http://127.0.0.1:<rr-port>/proxy"
+                "Replace <rr-port> with the actual port."
             )
