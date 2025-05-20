@@ -29,8 +29,9 @@ class MultiViewAlternatingAttentionTransformer(UniCeptionInfoSharingBase):
         self,
         name: str,
         input_embed_dim: int,
-        max_num_views: int,
-        use_rand_idx_pe_for_non_reference_views: bool,
+        use_pe_for_non_reference_views: bool = False,
+        max_num_views_for_pe: int = 1000,
+        use_rand_idx_pe_for_non_reference_views: bool = True,
         size: Optional[str] = None,
         depth: int = 12,
         dim: int = 768,
@@ -56,8 +57,9 @@ class MultiViewAlternatingAttentionTransformer(UniCeptionInfoSharingBase):
 
         Args:
             input_embed_dim (int): Dimension of input embeddings.
-            max_num_views (int): Maximum number of views for positional encoding.
-            use_rand_idx_pe_for_non_reference_views (bool): Whether to use random index positional encoding for non-reference views.
+            use_pe_for_non_reference_views (bool): Whether to use view positional encoding for input non-referenec views. (default: False)
+            max_num_views_for_pe (int): Maximum number of views for positional encoding. (default: 1000)
+            use_rand_idx_pe_for_non_reference_views (bool): Whether to use random index positional encoding for non-reference views. (default: True)
             size (str): String to indicate interpretable size of the transformer (for e.g., base, large, ...). (default: None)
             depth (int): Number of transformer layers. (default: 12, base size)
             dim (int): Dimension of the transformer. (default: 768, base size)
@@ -80,7 +82,8 @@ class MultiViewAlternatingAttentionTransformer(UniCeptionInfoSharingBase):
 
         # Initialize the specific attributes of the transformer
         self.input_embed_dim = input_embed_dim
-        self.max_num_views = max_num_views
+        self.use_pe_for_non_reference_views = use_pe_for_non_reference_views
+        self.max_num_views_for_pe = max_num_views_for_pe
         self.use_rand_idx_pe_for_non_reference_views = use_rand_idx_pe_for_non_reference_views
         self.depth = depth
         self.dim = dim
@@ -133,11 +136,18 @@ class MultiViewAlternatingAttentionTransformer(UniCeptionInfoSharingBase):
         if self.custom_positional_encoding is not None:
             self.position_getter = PositionGetter()
 
-        # Initialize the positional encoding table for the different views
-        self.register_buffer(
-            "view_pos_table",
-            self._get_sinusoid_encoding_table(self.max_num_views, self.dim, 10000),
-        )
+        if self.use_pe_for_non_reference_views:
+            # Initialize the positional encoding table for the different views
+            self.register_buffer(
+                "view_pos_table",
+                self._get_sinusoid_encoding_table(self.max_num_views_for_pe, self.dim, 10000),
+            )
+        else:
+            # Initialize the positional encoding table for the reference view
+            self.register_buffer(
+                "view_pos_table",
+                self._get_sinusoid_encoding_table(1, self.dim, 10000),
+            )
 
         # Initialize random weights
         self.initialize_weights()
@@ -145,7 +155,7 @@ class MultiViewAlternatingAttentionTransformer(UniCeptionInfoSharingBase):
         # Load pretrained weights if provided
         if self.pretrained_checkpoint_path is not None:
             print(
-                f"Loading pretrained multi-view Alternating-Attention transformer weights from {self.pretrained_checkpoint_path} ..."
+                f"Loading pretrained multi-view alternating-attention transformer weights from {self.pretrained_checkpoint_path} ..."
             )
             ckpt = torch.load(self.pretrained_checkpoint_path, weights_only=False)
             print(self.load_state_dict(ckpt["model"]))
@@ -189,14 +199,17 @@ class MultiViewAlternatingAttentionTransformer(UniCeptionInfoSharingBase):
             model_input (MultiViewTransformerInput): Input to the model.
                 Expects the features to be a list of size (batch, input_embed_dim, height, width),
                 where each entry corresponds to a different view.
+                Optionally, the input can also include additional_input_tokens (e.g., class token, registers, pose tokens, scale token)
+                which are appended to the token set from the multi-view features. The tokens are of size (batch, input_embed_dim, num_of_additional_tokens).
 
         Returns:
             MultiViewTransformerOutput: Output of the model post information sharing.
         """
         # Check that the number of views matches the input and the features are of expected shape
-        assert (
-            len(model_input.features) <= self.max_num_views
-        ), f"Expected less than {self.max_num_views} views, got {len(model_input.features)}"
+        if self.use_pe_for_non_reference_views:
+            assert (
+                len(model_input.features) <= self.max_num_views_for_pe
+            ), f"Expected less than {self.max_num_views_for_pe} views, got {len(model_input.features)}"
         assert all(
             view_features.shape[1] == self.input_embed_dim for view_features in model_input.features
         ), f"All views must have input dimension {self.input_embed_dim}"
@@ -219,6 +232,21 @@ class MultiViewAlternatingAttentionTransformer(UniCeptionInfoSharingBase):
             batch_size, num_of_views * height * width, self.input_embed_dim
         ).contiguous()
 
+        # Process additional input tokens if provided
+        if model_input.additional_input_tokens is not None:
+            additional_tokens = model_input.additional_input_tokens
+            assert additional_tokens.ndim == 3, "Additional tokens must have 3 dimensions (N, C, T)"
+            assert (
+                additional_tokens.shape[1] == self.input_embed_dim
+            ), f"Additional tokens must have input dimension {self.input_embed_dim}"
+            assert additional_tokens.shape[0] == batch_size, "Batch size mismatch for additional tokens"
+
+            # Reshape to channel-last format for transformer processing
+            additional_tokens = additional_tokens.permute(0, 2, 1).contiguous()  # (N, C, T) -> (N, T, C)
+
+            # Concatenate the additional tokens to the multi-view features
+            multi_view_features = torch.cat([multi_view_features, additional_tokens], dim=1)
+
         # Project input features to the transformer dimension
         multi_view_features = self.proj_embed(multi_view_features)
 
@@ -231,6 +259,11 @@ class MultiViewAlternatingAttentionTransformer(UniCeptionInfoSharingBase):
         else:
             multi_view_positions = [None] * num_of_views
 
+        # Add None positions for additional tokens if they exist
+        if model_input.additional_input_tokens is not None:
+            additional_tokens_positions = [None] * model_input.additional_input_tokens.shape[1]
+            multi_view_positions = multi_view_positions + additional_tokens_positions
+
         # Add positional encoding for reference view (idx 0)
         ref_view_pe = self.view_pos_table[0].clone().detach()
         ref_view_pe = ref_view_pe.reshape((1, 1, self.dim))
@@ -238,20 +271,32 @@ class MultiViewAlternatingAttentionTransformer(UniCeptionInfoSharingBase):
         ref_view_features = multi_view_features[:, :num_of_tokens_per_view, :]
         ref_view_features = ref_view_features + ref_view_pe
 
-        # Add positional encoding for non-reference views (sequential indices starting from idx 1 or random indices which are uniformly sampled)
-        if self.use_rand_idx_pe_for_non_reference_views:
-            non_ref_view_pe_indices = torch.randint(low=1, high=self.max_num_views, size=(num_of_views - 1,))
+        if self.use_pe_for_non_reference_views:
+            # Add positional encoding for non-reference views (sequential indices starting from idx 1 or random indices which are uniformly sampled)
+            if self.use_rand_idx_pe_for_non_reference_views:
+                non_ref_view_pe_indices = torch.randint(low=1, high=self.max_num_views_for_pe, size=(num_of_views - 1,))
+            else:
+                non_ref_view_pe_indices = torch.arange(1, num_of_views)
+            non_ref_view_pe = self.view_pos_table[non_ref_view_pe_indices].clone().detach()
+            non_ref_view_pe = non_ref_view_pe.reshape((1, num_of_views - 1, self.dim))
+            non_ref_view_pe = non_ref_view_pe.repeat_interleave(num_of_tokens_per_view, dim=1)
+            non_ref_view_pe = non_ref_view_pe.repeat(batch_size, 1, 1)
+            non_ref_view_features = multi_view_features[
+                :, num_of_tokens_per_view : num_of_views * num_of_tokens_per_view, :
+            ]
+            non_ref_view_features = non_ref_view_features + non_ref_view_pe
         else:
-            non_ref_view_pe_indices = torch.arange(1, num_of_views)
-        non_ref_view_pe = self.view_pos_table[non_ref_view_pe_indices].clone().detach()
-        non_ref_view_pe = non_ref_view_pe.reshape((1, num_of_views - 1, self.dim))
-        non_ref_view_pe = non_ref_view_pe.repeat_interleave(num_of_tokens_per_view, dim=1)
-        non_ref_view_pe = non_ref_view_pe.repeat(batch_size, 1, 1)
-        non_ref_view_features = multi_view_features[:, num_of_tokens_per_view:, :]
-        non_ref_view_features = non_ref_view_features + non_ref_view_pe
+            non_ref_view_features = multi_view_features[
+                :, num_of_tokens_per_view : num_of_views * num_of_tokens_per_view, :
+            ]
 
         # Concatenate the reference and non-reference view features
-        multi_view_features = torch.cat([ref_view_features, non_ref_view_features], dim=1)
+        # Handle additional tokens (no view-based positional encoding for them)
+        if model_input.additional_input_tokens is not None:
+            additional_features = multi_view_features[:, num_of_views * num_of_tokens_per_view :, :]
+            multi_view_features = torch.cat([ref_view_features, non_ref_view_features, additional_features], dim=1)
+        else:
+            multi_view_features = torch.cat([ref_view_features, non_ref_view_features], dim=1)
 
         # Loop over the depth of the transformer
         for depth_idx in range(self.depth):
@@ -260,6 +305,20 @@ class MultiViewAlternatingAttentionTransformer(UniCeptionInfoSharingBase):
                 # Global attention across all views
                 multi_view_features = self.self_attention_blocks[depth_idx](multi_view_features, multi_view_positions)
             else:
+                # Handle additional tokens separately for frame-level attention
+                additional_features = None
+                additional_positions = None
+                if model_input.additional_input_tokens is not None:
+                    # Extract additional token features
+                    additional_features = multi_view_features[:, num_of_views * num_of_tokens_per_view :, :]
+                    # Keep only view features for frame-level attention
+                    multi_view_features = multi_view_features[:, : num_of_views * num_of_tokens_per_view, :]
+
+                    # Handle positions for additional tokens if custom positional encoding is used
+                    if self.custom_positional_encoding is not None:
+                        additional_positions = multi_view_positions[:, num_of_views * num_of_tokens_per_view :, :]
+                        multi_view_positions = multi_view_positions[:, : num_of_views * num_of_tokens_per_view, :]
+
                 # Reshape the multi-view features from (N, V * H * W, C) to (N * V, H * W, C)
                 multi_view_features = multi_view_features.reshape(
                     batch_size * num_of_views, num_of_tokens_per_view, self.dim
@@ -282,23 +341,36 @@ class MultiViewAlternatingAttentionTransformer(UniCeptionInfoSharingBase):
                         batch_size, num_of_views * num_of_tokens_per_view, 2
                     ).contiguous()  # (N, V * H * W, C)
 
+                # Reattach additional tokens if they exist
+                if additional_features is not None:
+                    multi_view_features = torch.cat([multi_view_features, additional_features], dim=1)
+                    # Reattach positions for additional tokens if they exist
+                    if additional_positions is not None:
+                        multi_view_positions = torch.cat([multi_view_positions, additional_positions], dim=1)
+
         # Normalize the output features
         output_multi_view_features = self.norm(multi_view_features)
 
+        # Extract only the view features (excluding additional tokens)
+        view_features = output_multi_view_features[:, : num_of_views * num_of_tokens_per_view, :]
+
         # Reshape the output multi-view features (N, V * H * W, C) back to (N, V, C, H, W)
-        output_multi_view_features = output_multi_view_features.reshape(
-            batch_size, num_of_views, height, width, self.dim
-        )  # (N, V, H, W, C)
-        output_multi_view_features = output_multi_view_features.permute(0, 1, 4, 2, 3).contiguous()
+        view_features = view_features.reshape(batch_size, num_of_views, height, width, self.dim)  # (N, V, H, W, C)
+        view_features = view_features.permute(0, 1, 4, 2, 3).contiguous()  # (N, V, C, H, W)
 
         # Split the output multi-view features into separate views
-        output_multi_view_features = output_multi_view_features.split(1, dim=1)
-        output_multi_view_features = [
-            output_view_features.squeeze(dim=1) for output_view_features in output_multi_view_features
-        ]
+        view_features = view_features.split(1, dim=1)
+        view_features = [output_view_features.squeeze(dim=1) for output_view_features in view_features]
 
-        # Return the output multi-view features
-        return MultiViewTransformerOutput(features=output_multi_view_features)
+        # Extract and return additional token features if provided
+        if model_input.additional_input_tokens is not None:
+            additional_token_features = output_multi_view_features[:, num_of_views * num_of_tokens_per_view :, :]
+            additional_token_features = additional_token_features.permute(0, 2, 1).contiguous()  # (N, C, T)
+            return MultiViewTransformerOutput(
+                features=view_features, additional_token_features=additional_token_features
+            )
+        else:
+            return MultiViewTransformerOutput(features=view_features)
 
 
 class MultiViewAlternatingAttentionTransformerIFR(
@@ -310,8 +382,9 @@ class MultiViewAlternatingAttentionTransformerIFR(
         self,
         name: str,
         input_embed_dim: int,
-        max_num_views: int,
-        use_rand_idx_pe_for_non_reference_views: bool,
+        use_pe_for_non_reference_views: bool = False,
+        max_num_views_for_pe: int = 1000,
+        use_rand_idx_pe_for_non_reference_views: bool = True,
         size: Optional[str] = None,
         depth: int = 12,
         dim: int = 768,
@@ -340,7 +413,9 @@ class MultiViewAlternatingAttentionTransformerIFR(
 
         Args:
             input_embed_dim (int): Dimension of input embeddings.
-            max_num_views (int): Maximum number of views for positional encoding.
+            use_pe_for_non_reference_views (bool): Whether to use view positional encoding for input non-referenec views. (default: False)
+            max_num_views_for_pe (int): Maximum number of views for positional encoding. (default: 1000)
+            use_rand_idx_pe_for_non_reference_views (bool): Whether to use random index positional encoding for non-reference views. (default: True)
             use_rand_idx_pe_for_non_reference_views (bool): Whether to use random index positional encoding for non-reference views.
             size (str): String to indicate interpretable size of the transformer (for e.g., base, large, ...). (default: None)
             depth (int): Number of transformer layers. (default: 12, base size)
@@ -370,7 +445,8 @@ class MultiViewAlternatingAttentionTransformerIFR(
             self,
             name=name,
             input_embed_dim=input_embed_dim,
-            max_num_views=max_num_views,
+            use_pe_for_non_reference_views=use_pe_for_non_reference_views,
+            max_num_views_for_pe=max_num_views_for_pe,
             use_rand_idx_pe_for_non_reference_views=use_rand_idx_pe_for_non_reference_views,
             size=size,
             depth=depth,
@@ -412,6 +488,8 @@ class MultiViewAlternatingAttentionTransformerIFR(
             model_input (MultiViewTransformerInput): Input to the model.
                 Expects the features to be a list of size (batch, input_embed_dim, height, width),
                 where each entry corresponds to a different view.
+                Optionally, the input can also include additional_input_tokens (e.g., class token, registers, pose tokens, scale token)
+                which are appended to the token set from the multi-view features. The tokens are of size (batch, input_embed_dim, num_of_additional_tokens).
 
         Returns:
             Union[List[MultiViewTransformerOutput], Tuple[MultiViewTransformerOutput, List[MultiViewTransformerOutput]]]:
@@ -420,9 +498,10 @@ class MultiViewAlternatingAttentionTransformerIFR(
                 If intermediates_only is False, returns a tuple of final output and a list of intermediate outputs.
         """
         # Check that the number of views matches the input and the features are of expected shape
-        assert (
-            len(model_input.features) <= self.max_num_views
-        ), f"Expected {self.num_views} views, got {len(model_input.features)}"
+        if self.use_pe_for_non_reference_views:
+            assert (
+                len(model_input.features) <= self.max_num_views_for_pe
+            ), f"Expected less than {self.max_num_views_for_pe} views, got {len(model_input.features)}"
         assert all(
             view_features.shape[1] == self.input_embed_dim for view_features in model_input.features
         ), f"All views must have input dimension {self.input_embed_dim}"
@@ -449,6 +528,21 @@ class MultiViewAlternatingAttentionTransformerIFR(
             batch_size, num_of_views * height * width, self.input_embed_dim
         ).contiguous()
 
+        # Process additional input tokens if provided
+        if model_input.additional_input_tokens is not None:
+            additional_tokens = model_input.additional_input_tokens
+            assert additional_tokens.ndim == 3, "Additional tokens must have 3 dimensions (N, C, T)"
+            assert (
+                additional_tokens.shape[1] == self.input_embed_dim
+            ), f"Additional tokens must have input dimension {self.input_embed_dim}"
+            assert additional_tokens.shape[0] == batch_size, "Batch size mismatch for additional tokens"
+
+            # Reshape to channel-last format for transformer processing
+            additional_tokens = additional_tokens.permute(0, 2, 1).contiguous()  # (N, C, T) -> (N, T, C)
+
+            # Concatenate the additional tokens to the multi-view features
+            multi_view_features = torch.cat([multi_view_features, additional_tokens], dim=1)
+
         # Project input features to the transformer dimension
         multi_view_features = self.proj_embed(multi_view_features)
 
@@ -461,6 +555,11 @@ class MultiViewAlternatingAttentionTransformerIFR(
         else:
             multi_view_positions = [None] * num_of_views
 
+        # Add None positions for additional tokens if they exist
+        if model_input.additional_input_tokens is not None:
+            additional_tokens_positions = [None] * model_input.additional_input_tokens.shape[1]
+            multi_view_positions = multi_view_positions + additional_tokens_positions
+
         # Add positional encoding for reference view (idx 0)
         ref_view_pe = self.view_pos_table[0].clone().detach()
         ref_view_pe = ref_view_pe.reshape((1, 1, self.dim))
@@ -468,20 +567,32 @@ class MultiViewAlternatingAttentionTransformerIFR(
         ref_view_features = multi_view_features[:, :num_of_tokens_per_view, :]
         ref_view_features = ref_view_features + ref_view_pe
 
-        # Add positional encoding for non-reference views (sequential indices starting from idx 1 or random indices which are uniformly sampled)
-        if self.use_rand_idx_pe_for_non_reference_views:
-            non_ref_view_pe_indices = torch.randint(low=1, high=self.max_num_views, size=(num_of_views - 1,))
+        if self.use_pe_for_non_reference_views:
+            # Add positional encoding for non-reference views (sequential indices starting from idx 1 or random indices which are uniformly sampled)
+            if self.use_rand_idx_pe_for_non_reference_views:
+                non_ref_view_pe_indices = torch.randint(low=1, high=self.max_num_views_for_pe, size=(num_of_views - 1,))
+            else:
+                non_ref_view_pe_indices = torch.arange(1, num_of_views)
+            non_ref_view_pe = self.view_pos_table[non_ref_view_pe_indices].clone().detach()
+            non_ref_view_pe = non_ref_view_pe.reshape((1, num_of_views - 1, self.dim))
+            non_ref_view_pe = non_ref_view_pe.repeat_interleave(num_of_tokens_per_view, dim=1)
+            non_ref_view_pe = non_ref_view_pe.repeat(batch_size, 1, 1)
+            non_ref_view_features = multi_view_features[
+                :, num_of_tokens_per_view : num_of_views * num_of_tokens_per_view, :
+            ]
+            non_ref_view_features = non_ref_view_features + non_ref_view_pe
         else:
-            non_ref_view_pe_indices = torch.arange(1, num_of_views)
-        non_ref_view_pe = self.view_pos_table[non_ref_view_pe_indices].clone().detach()
-        non_ref_view_pe = non_ref_view_pe.reshape((1, num_of_views - 1, self.dim))
-        non_ref_view_pe = non_ref_view_pe.repeat_interleave(num_of_tokens_per_view, dim=1)
-        non_ref_view_pe = non_ref_view_pe.repeat(batch_size, 1, 1)
-        non_ref_view_features = multi_view_features[:, num_of_tokens_per_view:, :]
-        non_ref_view_features = non_ref_view_features + non_ref_view_pe
+            non_ref_view_features = multi_view_features[
+                :, num_of_tokens_per_view : num_of_views * num_of_tokens_per_view, :
+            ]
 
         # Concatenate the reference and non-reference view features
-        multi_view_features = torch.cat([ref_view_features, non_ref_view_features], dim=1)
+        # Handle additional tokens (no view-based positional encoding for them)
+        if model_input.additional_input_tokens is not None:
+            additional_features = multi_view_features[:, num_of_views * num_of_tokens_per_view :, :]
+            multi_view_features = torch.cat([ref_view_features, non_ref_view_features, additional_features], dim=1)
+        else:
+            multi_view_features = torch.cat([ref_view_features, non_ref_view_features], dim=1)
 
         # Loop over the depth of the transformer
         for depth_idx in range(self.depth):
@@ -490,6 +601,20 @@ class MultiViewAlternatingAttentionTransformerIFR(
                 # Global attention across all views
                 multi_view_features = self.self_attention_blocks[depth_idx](multi_view_features, multi_view_positions)
             else:
+                # Handle additional tokens separately for frame-level attention
+                additional_features = None
+                additional_positions = None
+                if model_input.additional_input_tokens is not None:
+                    # Extract additional token features
+                    additional_features = multi_view_features[:, num_of_views * num_of_tokens_per_view :, :]
+                    # Keep only view features for frame-level attention
+                    multi_view_features = multi_view_features[:, : num_of_views * num_of_tokens_per_view, :]
+
+                    # Handle positions for additional tokens if custom positional encoding is used
+                    if self.custom_positional_encoding is not None:
+                        additional_positions = multi_view_positions[:, num_of_views * num_of_tokens_per_view :, :]
+                        multi_view_positions = multi_view_positions[:, : num_of_views * num_of_tokens_per_view, :]
+
                 # Reshape the multi-view features from (N, V * H * W, C) to (N * V, H * W, C)
                 multi_view_features = multi_view_features.reshape(
                     batch_size * num_of_views, num_of_tokens_per_view, self.dim
@@ -511,6 +636,13 @@ class MultiViewAlternatingAttentionTransformerIFR(
                     multi_view_positions = multi_view_positions.reshape(
                         batch_size, num_of_views * num_of_tokens_per_view, 2
                     ).contiguous()  # (N, V * H * W, C)
+
+                # Reattach additional tokens if they exist
+                if additional_features is not None:
+                    multi_view_features = torch.cat([multi_view_features, additional_features], dim=1)
+                    # Reattach positions for additional tokens if they exist
+                    if additional_positions is not None:
+                        multi_view_positions = torch.cat([multi_view_positions, additional_positions], dim=1)
             if depth_idx in take_indices:
                 # Normalize the intermediate features with final norm layer if enabled
                 intermediate_multi_view_features.append(
@@ -519,21 +651,31 @@ class MultiViewAlternatingAttentionTransformerIFR(
 
         # Reshape the intermediate features and convert to MultiViewTransformerOutput class
         for idx in range(len(intermediate_multi_view_features)):
+            # Get the current intermediate features
+            current_features = intermediate_multi_view_features[idx]
+
+            # Extract additional token features if provided
+            additional_token_features = None
+            if model_input.additional_input_tokens is not None:
+                additional_token_features = current_features[:, num_of_views * num_of_tokens_per_view :, :]
+                additional_token_features = additional_token_features.permute(0, 2, 1).contiguous()  # (N, C, T)
+                # Only keep the view features for reshaping
+                current_features = current_features[:, : num_of_views * num_of_tokens_per_view, :]
+
             # Reshape the intermediate multi-view features (N, V * H * W, C) back to (N, V, C, H, W)
-            intermediate_multi_view_features[idx] = intermediate_multi_view_features[idx].reshape(
+            current_features = current_features.reshape(
                 batch_size, num_of_views, height, width, self.dim
             )  # (N, V, H, W, C)
-            intermediate_multi_view_features[idx] = (
-                intermediate_multi_view_features[idx].permute(0, 1, 4, 2, 3).contiguous()
-            )
+            current_features = current_features.permute(0, 1, 4, 2, 3).contiguous()  # (N, V, C, H, W)
+
             # Split the intermediate multi-view features into separate views
-            intermediate_multi_view_features[idx] = intermediate_multi_view_features[idx].split(1, dim=1)
-            intermediate_multi_view_features[idx] = [
-                intermediate_view_features.squeeze(dim=1)
-                for intermediate_view_features in intermediate_multi_view_features[idx]
+            current_features = current_features.split(1, dim=1)
+            current_features = [
+                intermediate_view_features.squeeze(dim=1) for intermediate_view_features in current_features
             ]
+
             intermediate_multi_view_features[idx] = MultiViewTransformerOutput(
-                features=intermediate_multi_view_features[idx]
+                features=current_features, additional_token_features=additional_token_features
             )
 
         # Return only the intermediate features if enabled
@@ -543,18 +685,26 @@ class MultiViewAlternatingAttentionTransformerIFR(
         # Normalize the output features
         output_multi_view_features = self.norm(multi_view_features)
 
+        # Extract view features (excluding additional tokens)
+        additional_token_features = None
+        if model_input.additional_input_tokens is not None:
+            additional_token_features = output_multi_view_features[:, num_of_views * num_of_tokens_per_view :, :]
+            additional_token_features = additional_token_features.permute(0, 2, 1).contiguous()  # (N, C, T)
+            view_features = output_multi_view_features[:, : num_of_views * num_of_tokens_per_view, :]
+        else:
+            view_features = output_multi_view_features
+
         # Reshape the output multi-view features (N, V * H * W, C) back to (N, V, C, H, W)
-        output_multi_view_features = output_multi_view_features.reshape(
-            batch_size, num_of_views, height, width, self.dim
-        )  # (N, V, H, W, C)
-        output_multi_view_features = output_multi_view_features.permute(0, 1, 4, 2, 3).contiguous()
+        view_features = view_features.reshape(batch_size, num_of_views, height, width, self.dim)  # (N, V, H, W, C)
+        view_features = view_features.permute(0, 1, 4, 2, 3).contiguous()  # (N, V, C, H, W)
 
         # Split the output multi-view features into separate views
-        output_multi_view_features = output_multi_view_features.split(1, dim=1)
-        output_multi_view_features = [
-            output_view_features.squeeze(dim=1) for output_view_features in output_multi_view_features
-        ]
-        output_multi_view_features = MultiViewTransformerOutput(features=output_multi_view_features)
+        view_features = view_features.split(1, dim=1)
+        view_features = [output_view_features.squeeze(dim=1) for output_view_features in view_features]
+
+        output_multi_view_features = MultiViewTransformerOutput(
+            features=view_features, additional_token_features=additional_token_features
+        )
 
         return output_multi_view_features, intermediate_multi_view_features
 
@@ -566,13 +716,70 @@ def dummy_positional_encoding(x, xpos):
     return x
 
 
+def test_reshape_for_frame_attention():
+    "Test the reshape function for frame-level attention in the Alternating Attention Transformer"
+    batch_size = 2
+    num_of_views = 3
+    height = width = 2
+    dim = 4
+    num_of_tokens_per_view = height * width
+
+    # Create tensor with recognizable pattern
+    x = torch.zeros(batch_size, num_of_views * num_of_tokens_per_view, dim)
+    for b in range(batch_size):
+        for v in range(num_of_views):
+            for h in range(height):
+                for w in range(width):
+                    token_idx = v * num_of_tokens_per_view + h * width + w
+                    x[b, token_idx] = torch.tensor([b, v, h, w])
+
+    # Apply reshape
+    reshaped = x.reshape(batch_size * num_of_views, num_of_tokens_per_view, dim).contiguous()
+
+    # Verify shape
+    assert reshaped.shape == (batch_size * num_of_views, num_of_tokens_per_view, dim)
+
+    # Verify content (check a few values)
+    for b in range(batch_size):
+        for v in range(num_of_views):
+            for h in range(height):
+                for w in range(width):
+                    batch_view_idx = b * num_of_views + v
+                    token_idx = h * width + w
+                    expected = torch.tensor([b, v, h, w])
+                    assert torch.all(reshaped[batch_view_idx, token_idx] == expected)
+
+    # Verify reshape back works
+    back_to_original = reshaped.reshape(batch_size, num_of_views * num_of_tokens_per_view, dim)
+    assert torch.all(x == back_to_original)
+
+    print("Reshape test passed!")
+
+
 if __name__ == "__main__":
+    # Unit test the reshape logic used for frame-level attention
+    test_reshape_for_frame_attention()
+
     # Init multi-view alternating-attention transformer with no custom positional encoding and run a forward pass
     for num_views in [2, 3, 4]:
         print(f"Testing MultiViewAlternatingAttentionTransformer with {num_views} views ...")
+        # No positional encoding for non-reference views
+        model = MultiViewAlternatingAttentionTransformer(
+            name="MV-AAT",
+            input_embed_dim=1024,
+        )
+        model_input = [torch.rand(1, 1024, 14, 14) for _ in range(num_views)]
+        model_input = MultiViewTransformerInput(features=model_input)
+        model_output = model(model_input)
+        assert len(model_output.features) == num_views
+        assert all(f.shape == (1, model.dim, 14, 14) for f in model_output.features)
         # Sequential idx based positional encoding
         model = MultiViewAlternatingAttentionTransformer(
-            name="MV-AAT", input_embed_dim=1024, max_num_views=1000, use_rand_idx_pe_for_non_reference_views=False
+            name="MV-AAT",
+            input_embed_dim=1024,
+            use_pe_for_non_reference_views=True,
+            max_num_views_for_pe=1000,
+            use_rand_idx_pe_for_non_reference_views=False,
         )
         model_input = [torch.rand(1, 1024, 14, 14) for _ in range(num_views)]
         model_input = MultiViewTransformerInput(features=model_input)
@@ -581,7 +788,11 @@ if __name__ == "__main__":
         assert all(f.shape == (1, model.dim, 14, 14) for f in model_output.features)
         # Random idx based positional encoding
         model = MultiViewAlternatingAttentionTransformer(
-            name="MV-AAT", input_embed_dim=1024, max_num_views=1000, use_rand_idx_pe_for_non_reference_views=True
+            name="MV-AAT",
+            input_embed_dim=1024,
+            use_pe_for_non_reference_views=True,
+            max_num_views_for_pe=1000,
+            use_rand_idx_pe_for_non_reference_views=True,
         )
         model_input = [torch.rand(1, 1024, 14, 14) for _ in range(num_views)]
         model_input = MultiViewTransformerInput(features=model_input)
@@ -597,8 +808,6 @@ if __name__ == "__main__":
         model = MultiViewAlternatingAttentionTransformer(
             name="MV-AAT",
             input_embed_dim=1024,
-            max_num_views=1000,
-            use_rand_idx_pe_for_non_reference_views=True,
             custom_positional_encoding=dummy_positional_encoding,
         )
         model_input = [torch.rand(1, 1024, 14, 14) for _ in range(num_views)]
@@ -616,8 +825,6 @@ if __name__ == "__main__":
     model_intermediate_feature_returner = MultiViewAlternatingAttentionTransformerIFR(
         name="MV-AAT-IFR",
         input_embed_dim=1024,
-        max_num_views=1000,
-        use_rand_idx_pe_for_non_reference_views=True,
         indices=6,  # Last 6 layers
     )
     model_input = [torch.rand(1, 1024, 14, 14) for _ in range(2)]
@@ -633,8 +840,6 @@ if __name__ == "__main__":
     model_intermediate_feature_returner = MultiViewAlternatingAttentionTransformerIFR(
         name="MV-AAT-IFR",
         input_embed_dim=1024,
-        max_num_views=1000,
-        use_rand_idx_pe_for_non_reference_views=True,
         indices=[0, 2, 4, 6],  # Specific indices
     )
     model_input = [torch.rand(1, 1024, 14, 14) for _ in range(2)]
@@ -650,8 +855,6 @@ if __name__ == "__main__":
     model_intermediate_feature_returner = MultiViewAlternatingAttentionTransformerIFR(
         name="MV-AAT-IFR",
         input_embed_dim=1024,
-        max_num_views=1000,
-        use_rand_idx_pe_for_non_reference_views=True,
         indices=[-1],  # Last layer
         norm_intermediate=False,  # Disable normalization
     )
@@ -666,8 +869,6 @@ if __name__ == "__main__":
     model_intermediate_feature_returner = MultiViewAlternatingAttentionTransformerIFR(
         name="MV-AAT-IFR",
         input_embed_dim=1024,
-        max_num_views=1000,
-        use_rand_idx_pe_for_non_reference_views=True,
         indices=[-1],  # Last layer
         norm_intermediate=True,
     )
@@ -680,3 +881,45 @@ if __name__ == "__main__":
         ), "Final features and intermediate features (last layer) must be same."
 
     print("All Intermediate Feature Returner Tests passed!")
+
+    # Test additonal input tokens for MultiViewAlternatingAttentionTransformer
+    print("Testing MultiViewAlternatingAttentionTransformer with additional input tokens ...")
+    model = MultiViewAlternatingAttentionTransformer(
+        name="MV-AAT",
+        input_embed_dim=1024,
+    )
+    num_views = 2
+    num_additional_tokens = 5
+    model_input = [torch.rand(1, 1024, 14, 14) for _ in range(num_views)]
+    additional_tokens = torch.rand(1, 1024, num_additional_tokens)
+    model_input = MultiViewTransformerInput(features=model_input, additional_input_tokens=additional_tokens)
+    model_output = model(model_input)
+    assert len(model_output.features) == num_views
+    assert all(f.shape == (1, model.dim, 14, 14) for f in model_output.features)
+    assert model_output.additional_token_features is not None
+    assert model_output.additional_token_features.shape == (1, model.dim, num_additional_tokens)
+
+    # Test additonal input tokens for MultiViewAlternatingAttentionTransformerIFR
+    print("Testing MultiViewAlternatingAttentionTransformerIFR with additional input tokens ...")
+    model_ifr = MultiViewAlternatingAttentionTransformerIFR(
+        name="MV-AAT-IFR",
+        input_embed_dim=1024,
+        indices=[0, 2, 4],
+    )
+    model_input = [torch.rand(1, 1024, 14, 14) for _ in range(num_views)]
+    additional_tokens = torch.rand(1, 1024, num_additional_tokens)
+    model_input = MultiViewTransformerInput(features=model_input, additional_input_tokens=additional_tokens)
+    output = model_ifr(model_input)
+    assert isinstance(output, tuple)
+    assert isinstance(output[0], MultiViewTransformerOutput)
+    assert output[0].additional_token_features is not None
+    assert output[0].additional_token_features.shape == (1, model_ifr.dim, num_additional_tokens)
+    assert len(output[1]) == 3
+    assert all(isinstance(intermediate, MultiViewTransformerOutput) for intermediate in output[1])
+    assert all(intermediate.additional_token_features is not None for intermediate in output[1])
+    assert all(
+        intermediate.additional_token_features.shape == (1, model_ifr.dim, num_additional_tokens)
+        for intermediate in output[1]
+    )
+
+    print("All tests using additional input tokens passed!")
