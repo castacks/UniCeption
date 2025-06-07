@@ -13,6 +13,7 @@ from uniception.models.encoders.base import (
 )
 from uniception.models.encoders.croco import CroCoEncoder
 from uniception.models.encoders.dinov2 import DINOv2Encoder
+from uniception.models.encoders.naradio import NARADIOEncoder
 from uniception.models.encoders.radio import RADIOEncoder
 
 # Define encoder configurations
@@ -28,6 +29,10 @@ ENCODER_CONFIGS = {
     "radio": {
         "class": RADIOEncoder,
         "supported_models": ["RADIO", "E-RADIO"],
+    },
+    "naradio": {
+        "class": NARADIOEncoder,
+        "supported_models": ["RADIO"],
     },
     # Add other encoders here
 }
@@ -138,6 +143,11 @@ def _make_encoder_test(encoder_str: str, **kwargs) -> UniCeptionEncoderBase:
             size=size,
             with_registers=with_registers,
             pretrained_checkpoint_path=pretrained_checkpoint_path,
+        )
+    elif "naradio" in encoder_str:
+        return NARADIOEncoder(
+            name=encoder_str,
+            model_version=encoder_str.replace("na", ""),
         )
     elif "radio" in encoder_str:
         if "e-radio" in encoder_str:
