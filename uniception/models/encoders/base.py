@@ -2,11 +2,12 @@
 Base Encoder Class for UniCeption
 """
 
+from dataclasses import dataclass
+from typing import Optional
+
 import torch.nn as nn
 from jaxtyping import Float
-from dataclasses import dataclass
 from torch import Tensor
-from typing import Optional
 
 
 @dataclass

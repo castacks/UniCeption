@@ -5,13 +5,14 @@ UniCeption Cross-Attention Transformer for Information Sharing
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import partial
-from jaxtyping import Float
-from typing import Callable, List, Optional, Tuple, Union
+from typing import Callable, List, Optional, Tuple, Type, Union
 
 import torch
 import torch.nn as nn
+from jaxtyping import Float
 from torch import Tensor
-from uniception.models.info_sharing.base import UniCeptionInfoSharingBase, InfoSharingInput, InfoSharingOutput
+
+from uniception.models.info_sharing.base import InfoSharingInput, InfoSharingOutput, UniCeptionInfoSharingBase
 from uniception.models.utils.intermediate_feature_return import IntermediateFeatureReturner, feature_take_indices
 from uniception.models.utils.transformer_blocks import CrossAttentionBlock, Mlp
 
@@ -71,12 +72,12 @@ class MultiViewCrossAttentionTransformer(UniCeptionInfoSharingBase):
         attn_drop: float = 0.0,
         init_values: Optional[float] = None,
         drop_path: float = 0.0,
-        act_layer: nn.Module = nn.GELU,
-        norm_layer: nn.Module = partial(nn.LayerNorm, eps=1e-6),
-        mlp_layer: nn.Module = Mlp,
-        custom_positional_encoding: Callable = None,
+        act_layer: Type[nn.Module] = nn.GELU,
+        norm_layer: Union[Type[nn.Module], Callable[..., nn.Module]] = partial(nn.LayerNorm, eps=1e-6),
+        mlp_layer: Type[nn.Module] = Mlp,
+        custom_positional_encoding: Optional[Callable] = None,
         norm_cross_tokens: bool = True,
-        pretrained_checkpoint_path: str = None,
+        pretrained_checkpoint_path: Optional[str] = None,
         *args,
         **kwargs,
     ):
@@ -600,47 +601,3 @@ if __name__ == "__main__":
         ), "Final features and intermediate features (last layer) must be same."
 
     print("All Intermediate Feature Returner Tests passed!")
-
-    # # Load checkpoint for CroCo
-    # checkpoint_path = '/ocean/projects/cis220039p/nkeetha/code/AnyMap/checkpoints/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth'
-    # checkpoint = torch.load(checkpoint_path, weights_only=False)
-    # filtered_checkpoint = checkpoint['model']
-    # filtered_checkpoint = {k: v for k, v in filtered_checkpoint.items() if 'dec' in k}
-    # duplicate_checkpoint = {}
-    # if not any(k.startswith('dec_blocks2') for k in filtered_checkpoint):
-    #     print("Duplicating dec_blocks to dec_blocks2")
-    #     for key, value in filtered_checkpoint.items():
-    #         if key.startswith('dec_blocks'):
-    #             duplicate_checkpoint[key.replace('dec_blocks', 'dec_blocks2')] = value
-    #     filtered_checkpoint = {**filtered_checkpoint, **duplicate_checkpoint}
-    # new_checkpoint = {}
-    # for k, v in filtered_checkpoint.items():
-    #     if 'decoder_embed' in k:
-    #         new_key = k.replace('decoder_embed', 'proj_embed')
-    #         new_checkpoint[new_key] = v
-    #     elif 'dec_blocks.' in k:
-    #         new_key = k.replace('dec_blocks.', 'multi_view_branches.0.')
-    #         new_checkpoint[new_key] = v
-    #     elif 'dec_blocks2.' in k:
-    #         new_key = k.replace('dec_blocks2.', 'multi_view_branches.1.')
-    #         new_checkpoint[new_key] = v
-    #     elif 'dec_norm' in k:
-    #         new_key = k.replace('dec_norm', 'norm')
-    #         new_checkpoint[new_key] = v
-
-    # # Init model
-    # model = MultiViewCrossAttentionTransformerIFR(
-    #     name="MV-CAT-IFR",
-    #     input_embed_dim=1024,
-    #     num_views=2,
-    #     indices=[12*2//4, 12*3//4],
-    #     norm_intermediate=False,
-    # )
-
-    # # Load new checkpoint
-    # print(model.load_state_dict(new_checkpoint))
-
-    # # Save the checkpoint
-    # save_checkpoint = {}
-    # save_checkpoint['model'] = model.state_dict()
-    # torch.save(save_checkpoint, '/ocean/projects/cis220039p/nkeetha/code/UniCeption/checkpoints/info_sharing/cross_attn_transformer/Two_View_Cross_Attention_Transformer_MASt3R.pth')

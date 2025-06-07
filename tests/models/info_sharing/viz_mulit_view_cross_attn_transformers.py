@@ -17,11 +17,11 @@ from sklearn.decomposition import PCA
 
 from uniception.models.encoders import *
 from uniception.models.encoders.image_normalizations import *
-from uniception.models.libs.croco.pos_embed import get_2d_sincos_pos_embed, RoPE2D
 from uniception.models.info_sharing.cross_attention_transformer import (
     MultiViewCrossAttentionTransformerIFR,
     MultiViewCrossAttentionTransformerInput,
 )
+from uniception.models.libs.croco.pos_embed import RoPE2D, get_2d_sincos_pos_embed
 
 
 def _make_mv_cross_attention_transformer_test(model_str: str, **kwargs):
@@ -88,7 +88,6 @@ def _make_mv_cross_attention_transformer_test(model_str: str, **kwargs):
 
 
 class TestMultiViewTransformers:
-
     def __init__(self, pca_save_folder, *args, **kwargs):
         super(TestMultiViewTransformers, self).__init__(*args, **kwargs)
 
@@ -119,7 +118,6 @@ class TestMultiViewTransformers:
             self._visualize_model_features_consistency(encoder, info_sharing, (224, 224))
 
     def _visualize_model_features_consistency(self, encoder, info_sharing, image_size: Tuple[int, int]):
-
         img0, viz_img0 = self._get_example_input(
             image_size, encoder.data_norm_type, img_selection=1, return_viz_img=True
         )

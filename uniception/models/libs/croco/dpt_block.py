@@ -6,11 +6,12 @@
 # References:
 # https://github.com/isl-org/DPT
 # https://github.com/EPFL-VILAB/MultiMAE/blob/main/multimae/output_adapters.py
+from typing import Dict, Iterable, List, Optional, Tuple, Union
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange, repeat
-from typing import Union, Tuple, Iterable, List, Optional, Dict
 
 
 def pair(t):

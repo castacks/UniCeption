@@ -3,20 +3,85 @@ Encoder Factory for UniCeption
 """
 
 import os
+
 from uniception.models.encoders.base import (
+    EncoderInput,
     UniCeptionEncoderBase,
     UniCeptionViTEncoderBase,
-    EncoderInput,
     ViTEncoderInput,
     ViTEncoderOutput,
 )
-
 from uniception.models.encoders.croco import CroCoEncoder
 from uniception.models.encoders.dinov2 import DINOv2Encoder
+from uniception.models.encoders.naradio import NARADIOEncoder
 from uniception.models.encoders.radio import RADIOEncoder
+
+# Define encoder configurations
+ENCODER_CONFIGS = {
+    "croco": {
+        "class": CroCoEncoder,
+        "supported_models": ["CroCov2", "DUSt3R", "MASt3R"],
+    },
+    "dinov2": {
+        "class": DINOv2Encoder,
+        "supported_models": ["DINOv2", "DINOv2-Registers", "DINOv2-Depth-Anythingv2"],
+    },
+    "radio": {
+        "class": RADIOEncoder,
+        "supported_models": ["RADIO", "E-RADIO"],
+    },
+    "naradio": {
+        "class": NARADIOEncoder,
+        "supported_models": ["RADIO"],
+    },
+    # Add other encoders here
+}
+
+
+def encoder_factory(encoder_str: str, **kwargs) -> UniCeptionEncoderBase:
+    """
+    Encoder factory for UniCeption.
+    Please use python3 -m uniception.models.encoders.list to see available encoders.
+
+    Args:
+        encoder_str (str): Name of the encoder to create.
+        **kwargs: Additional keyword arguments to pass to the encoder constructor.
+
+    Returns:
+        UniCeptionEncoderBase: An instance of the specified encoder.
+    """
+    if encoder_str not in ENCODER_CONFIGS:
+        raise ValueError(
+            f"Unknown encoder: {encoder_str}. For valid encoder_str options, please use python3 -m uniception.models.encoders.list"
+        )
+
+    encoder_config = ENCODER_CONFIGS[encoder_str]
+    encoder_class = encoder_config["class"]
+
+    return encoder_class(**kwargs)
+
+
+def get_available_encoders() -> list:
+    """
+    Get a list of available encoders in UniCeption.
+
+    Returns:
+        list: A list of available encoder names.
+    """
+    return list(ENCODER_CONFIGS.keys())
+
+
+def print_available_encoder_models():
+    """
+    Print the currently supported encoders in UniCeption.
+    """
+    print("Currently Supported Encoders in UniCeption:\nFormat -> encoder_str: supported_models")
+    for encoder_name, config in ENCODER_CONFIGS.items():
+        print(f"{encoder_name}: {', '.join(config['supported_models'])}")
 
 
 def _make_encoder_test(encoder_str: str, **kwargs) -> UniCeptionEncoderBase:
+    "Function to create encoders for testing purposes."
     current_file_path = os.path.abspath(__file__)
     relative_checkpoint_path = os.path.join(os.path.dirname(current_file_path), "../../../checkpoints/encoders")
     if encoder_str == "dummy":
@@ -79,6 +144,11 @@ def _make_encoder_test(encoder_str: str, **kwargs) -> UniCeptionEncoderBase:
             with_registers=with_registers,
             pretrained_checkpoint_path=pretrained_checkpoint_path,
         )
+    elif "naradio" in encoder_str:
+        return NARADIOEncoder(
+            name=encoder_str,
+            model_version=encoder_str.replace("na", ""),
+        )
     elif "radio" in encoder_str:
         if "e-radio" in encoder_str:
             eradio_input_shape = (224, 224)
@@ -94,6 +164,9 @@ def _make_encoder_test(encoder_str: str, **kwargs) -> UniCeptionEncoderBase:
 
 
 __all__ = [
+    "encoder_factory",
+    "get_available_encoders",
+    "print_available_encoder_models",
     "_make_encoder_test",
     "UniCeptionEncoderBase",
     "UniCeptionViTEncoderBase",

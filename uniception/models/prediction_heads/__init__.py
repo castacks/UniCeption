@@ -3,13 +3,14 @@ Init UniCeption Prediction Heads
 """
 
 from uniception.models.prediction_heads.base import (
-    PredictionHeadInput,
-    PredictionHeadOutput,
     AdaptorInput,
     AdaptorOutput,
+    Covariance2DAdaptorOutput,
     MaskAdaptorOutput,
+    PredictionHeadInput,
+    PredictionHeadOutput,
     RegressionAdaptorOutput,
     RegressionWithConfidenceAdaptorOutput,
-    UniCeptionPredictionHeadBase,
     UniCeptionAdaptorBase,
+    UniCeptionPredictionHeadBase,
 )

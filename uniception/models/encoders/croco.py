@@ -2,15 +2,16 @@
 Encoder Class for CroCo & DUSt3R
 """
 
+from functools import partial
+from typing import Callable, List, Optional, Tuple, Union
+
 import torch
 import torch.nn as nn
-from functools import partial
-from typing import Callable, List, Optional, Union, Tuple
 
 from uniception.models.encoders.base import UniCeptionViTEncoderBase, ViTEncoderInput, ViTEncoderOutput
 from uniception.models.libs.croco.blocks import Block
 from uniception.models.libs.croco.patch_embed import get_patch_embed
-from uniception.models.libs.croco.pos_embed import get_2d_sincos_pos_embed, RoPE2D
+from uniception.models.libs.croco.pos_embed import RoPE2D
 from uniception.models.utils.intermediate_feature_return import IntermediateFeatureReturner, feature_take_indices
 
 
@@ -31,6 +32,7 @@ class CroCoEncoder(UniCeptionViTEncoderBase):
         norm_layer: Callable = partial(nn.LayerNorm, eps=1e-6),
         pos_embed: str = "RoPE100",
         pretrained_checkpoint_path: str = None,
+        override_checkpoint_attributes: bool = False,
         *args,
         **kwargs,
     ):
@@ -49,7 +51,7 @@ class CroCoEncoder(UniCeptionViTEncoderBase):
             enc_num_heads (int, optional): The number of encoder heads. Defaults to 12.
             mlp_ratio (int, optional): The MLP ratio used for the CroCo encoder transformer. Defaults to 4.
             norm_layer (nn.Module, optional): The normalization layer to use in the transformer. Defaults to nn.LayerNorm with eps=1e-6.
-            pos_embed (str, optional): Positional Embedding. Defaults to 'RoPE100'. Options: ['cosine', 'RoPE100'].
+            pos_embed (str, optional): Positional Embedding. Defaults to 'RoPE100'. Options: ['RoPEfreq'].
             pretrained_checkpoint_path (str, optional): Path to the pretrained checkpoint. Defaults to None.
         """
         # Init the base class
@@ -69,16 +71,12 @@ class CroCoEncoder(UniCeptionViTEncoderBase):
         self.enc_num_heads = enc_num_heads
         self.mlp_ratio = mlp_ratio
         self.norm_layer = norm_layer
+        self.pretrained_checkpoint_path = pretrained_checkpoint_path
+        self.override_checkpoint_attributes = override_checkpoint_attributes
 
         # Init the positional embedding
         self.pos_embed = pos_embed
-        if pos_embed == "cosine":
-            enc_pos_embed = get_2d_sincos_pos_embed(
-                enc_embed_dim, int(self.patch_embed.num_patches**0.5), n_cls_token=0
-            )
-            self.register_buffer("enc_pos_embed", torch.from_numpy(enc_pos_embed).float())
-            self.rope = None  # nothing for cosine
-        elif pos_embed.startswith("RoPE"):  # eg RoPE100
+        if pos_embed.startswith("RoPE"):  # eg RoPE100
             self.enc_pos_embed = None  # nothing to add in the encoder with RoPE
             self.dec_pos_embed = None  # nothing to add in the decoder with RoPE
             if RoPE2D is None:
@@ -101,15 +99,16 @@ class CroCoEncoder(UniCeptionViTEncoderBase):
         if pretrained_checkpoint_path:
             print(f"Loading pretrained CroCo checkpoint from {pretrained_checkpoint_path}")
             ckpt = torch.load(pretrained_checkpoint_path, weights_only=False)
-            ckpt_data_norm_type = ckpt["data_norm_type"]
-            ckpt_patch_embed_cls = ckpt["patch_embed_cls"]
             print(self.load_state_dict(ckpt["model"]))
-            assert (
-                data_norm_type == ckpt_data_norm_type
-            ), f"Data normalization type {data_norm_type} does not match the checkpoint {ckpt_data_norm_type}."
-            assert (
-                patch_embed_cls == ckpt_patch_embed_cls
-            ), f"Patch embedding class {patch_embed_cls} does not match the checkpoint {ckpt_patch_embed_cls}."
+            if not override_checkpoint_attributes:
+                ckpt_data_norm_type = ckpt["data_norm_type"]
+                ckpt_patch_embed_cls = ckpt["patch_embed_cls"]
+                assert (
+                    data_norm_type == ckpt_data_norm_type
+                ), f"Data normalization type {data_norm_type} does not match the checkpoint {ckpt_data_norm_type}."
+                assert (
+                    patch_embed_cls == ckpt_patch_embed_cls
+                ), f"Patch embedding class {patch_embed_cls} does not match the checkpoint {ckpt_patch_embed_cls}."
         else:
             print("No pretrained checkpoint provided. Randomly initializing the CroCo encoder.")
 

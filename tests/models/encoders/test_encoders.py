@@ -12,12 +12,12 @@ import numpy as np
 import requests
 import torch
 from PIL import Image
+
 from uniception.models.encoders import *
 from uniception.models.encoders.image_normalizations import *
 
 
 class TestEncoders(unittest.TestCase):
-
     def __init__(self, *args, **kwargs):
         super(TestEncoders, self).__init__(*args, **kwargs)
 
@@ -37,9 +37,11 @@ class TestEncoders(unittest.TestCase):
         #     "radio_v2.5-b",
         #     "radio_v2.5-l",
         #     "e-radio_v2",
+        #     "naradio_v2.5-b",
+        #     "naradio_v2.5-l",
         # ]
         self.encoders = [
-            "dinov2_base",
+            "naradio_v2.5-b",
         ]
 
         self.encoder_configs = [{}] * len(self.encoders)

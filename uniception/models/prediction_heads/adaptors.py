@@ -2,20 +2,21 @@
 Adaptors for the UniCeption Prediction Heads.
 """
 
+from functools import lru_cache
 from math import isfinite
+from typing import List, Tuple, Union
+
 import numpy as np
 import torch
 import torch.nn as nn
-from dataclasses import dataclass
-from typing import List, Optional, Dict, Tuple
 
 from uniception.models.prediction_heads import (
-    UniCeptionAdaptorBase,
     AdaptorInput,
-    AdaptorOutput,
+    Covariance2DAdaptorOutput,
     MaskAdaptorOutput,
     RegressionAdaptorOutput,
     RegressionWithConfidenceAdaptorOutput,
+    UniCeptionAdaptorBase,
 )
 
 
@@ -23,10 +24,11 @@ class FlowAdaptor(UniCeptionAdaptorBase):
     def __init__(
         self,
         name: str,
-        flow_mean: torch.Tensor,
-        flow_std: torch.Tensor,
+        flow_mean: Union[Tuple[float, float], List[float]],
+        flow_std: Union[Tuple[float, float], List[float]],
         base_shape: Tuple[int, int],
         scale_strategy: str,
+        output_normalized_coordinate: bool = False,
         *args,
         **kwargs,
     ):
@@ -43,15 +45,31 @@ class FlowAdaptor(UniCeptionAdaptorBase):
             - scale_width: scale the output for "none" by actual width divided by base width for both X and Y
             - scale_height: scale the output for "none" by actual height divided by base height for both X and Y
             - scale_both: scale the output for "none" by actual dimension / base dimension individually for X and Y
+            output_normalized_coordinate (bool): If True, will subtract the (X, Y) coordinate of the output pixel from input x after it is being scaled to pixel coordinates.
+            In other words, the network will predict the pixel position that the source pixel will land on the target image, rather than the flow.
         """
         super().__init__(name, required_channels=2, *args, **kwargs)
 
         self.name: str = name
+
+        flow_mean = list(flow_mean)
+        flow_std = list(flow_std)
+
+        # handle the case where flow_mean and flow_std are passed as tuples
+        if isinstance(flow_mean, tuple) or isinstance(flow_mean, list):
+            flow_mean = torch.tensor(flow_mean, dtype=torch.float32)
+            assert flow_mean.shape == (2,), f"Flow mean must be a 2D tensor, got {flow_mean.shape}"
+
+        if isinstance(flow_std, tuple) or isinstance(flow_std, list):
+            flow_std = torch.tensor(flow_std, dtype=torch.float32)
+            assert flow_std.shape == (2,), f"Flow std must be a 2D tensor, got {flow_std.shape}"
+
         self.register_buffer("flow_mean", flow_mean.view(1, 2, 1, 1))
         self.register_buffer("flow_std", flow_std.view(1, 2, 1, 1))
 
-        self.base_shape = base_shape
+        self.base_shape = list(base_shape)
         self.scale_strategy = scale_strategy
+        self.output_normalized_coordinate = output_normalized_coordinate
 
     def forward(self, adaptor_input: AdaptorInput):
         """
@@ -72,14 +90,29 @@ class FlowAdaptor(UniCeptionAdaptorBase):
 
         output_shape = adaptor_input.output_shape_hw
 
-        x_scale, y_scale = self._get_xy_scale(output_shape)
+        if not self.output_normalized_coordinate:
+            x_scale, y_scale = self._get_xy_scale(output_shape)
 
-        # scale the flow by stored mean, std and scaling factors
-        flow_mean = self.flow_mean * x_scale
-        flow_std = self.flow_std * x_scale
+            # scale the flow by stored mean, std and scaling factors
+            flow_mean = self.flow_mean * torch.tensor([x_scale, y_scale], dtype=torch.float32, device=x.device).view(
+                1, 2, 1, 1
+            )
+            flow_std = self.flow_std * torch.tensor([x_scale, y_scale], dtype=torch.float32, device=x.device).view(
+                1, 2, 1, 1
+            )
 
-        # unnormalize the flow
-        x = x * flow_std + flow_mean
+            # unnormalize the flow
+            x = x * flow_std + flow_mean
+        else:
+            # optionally subtract the coordinate bias
+            wh_normalizer = torch.tensor(
+                adaptor_input.output_shape_hw[::-1], dtype=torch.float32, device=x.device
+            ).view(1, 2, 1, 1)
+
+            x = 0.5 * (x + 1) * wh_normalizer + 0.5
+
+            coords = self._get_coordinate_bias(output_shape, x.device)
+            x = x - coords
 
         return RegressionAdaptorOutput(value=x)
 
@@ -104,8 +137,34 @@ class FlowAdaptor(UniCeptionAdaptorBase):
         else:
             raise ValueError(f"Invalid scaling strategy: {self.scale_strategy}")
 
+    @lru_cache(maxsize=10)
+    def _get_coordinate_bias(self, output_shape: Tuple[int, int], device: str):
+        """
+        Get the (X, Y) coordinate image for the given output shape.
 
-# adapted from dust3r
+        Args:
+            output_shape (Tuple[int, int]): HW Shape of the output.
+            device: device to store the tensor on
+
+        Returns:
+            torch.Tensor: (2, H, W) tensor with X and Y coordinates, at device. This coordinate value will
+            include 0.5 px offset - i.e. the center of the top-left pixel is (0.5, 0.5).
+        """
+
+        H, W = output_shape
+
+        coords = torch.stack(
+            torch.meshgrid(
+                torch.arange(0, W, device=device, dtype=torch.float32) + 0.5,
+                torch.arange(0, H, device=device, dtype=torch.float32) + 0.5,
+                indexing="xy",
+            ),
+            dim=0,
+        )
+
+        return coords
+
+
 class DepthAdaptor(UniCeptionAdaptorBase):
     def __init__(self, name: str, mode: str, vmin: float = -np.inf, vmax: float = np.inf, *args, **kwargs):
         """
@@ -158,7 +217,7 @@ class PointMapAdaptor(UniCeptionAdaptorBase):
         """
         Adaptor for the Depth head in UniCeption.
         """
-        super().__init__(name, required_channels=1, *args, **kwargs)
+        super().__init__(name, required_channels=3, *args, **kwargs)
 
         self.mode = mode
         self.vmin = vmin
@@ -256,6 +315,64 @@ class ConfidenceAdaptor(UniCeptionAdaptorBase):
             return RegressionAdaptorOutput(value=confidence)
 
 
+class Covariance2DAdaptor(UniCeptionAdaptorBase):
+    def __init__(
+        self,
+        name: str,
+        parametrization: str = "exp_tanh",
+        *args,
+        **kwargs,
+    ):
+        """
+        Adaptor for the Covariance2D head in UniCeption.
+        """
+        super().__init__(name, required_channels=3, *args, **kwargs)
+        self.parametrization = parametrization
+
+    def forward(self, adaptor_input: AdaptorInput):
+        x = adaptor_input.adaptor_feature
+
+        if self.parametrization == "exp_tanh":
+            c1, c2, s = torch.split(x, 1, dim=1)
+
+            diag_exponent = (c1 + c2) / 2
+            tanh_s = s.tanh()
+
+            cov = torch.cat([c1.exp(), c2.exp(), tanh_s * torch.exp(diag_exponent)], dim=1)
+
+            log_det = c1 + c2 + torch.log(1 - torch.square(tanh_s) + 1e-8)
+
+            inv_coeff = 1 / (1 - torch.square(tanh_s) + 1e-8)
+            inv_cov = inv_coeff * torch.cat(
+                [torch.exp(-c1), torch.exp(-c2), -tanh_s * torch.exp(-diag_exponent)], dim=1
+            )
+
+        else:
+            raise ValueError(f"Invalid parametrization: {self.parametrization}")
+
+        return Covariance2DAdaptorOutput(covariance=cov, log_det=log_det, inv_covariance=inv_cov)
+
+
+class MaskAdaptor(UniCeptionAdaptorBase):
+    def __init__(
+        self,
+        name: str,
+        *args,
+        **kwargs,
+    ):
+        """
+        Adaptor for the Mask head in UniCeption.
+        """
+        super().__init__(name, required_channels=1, *args, **kwargs)
+
+    def forward(self, adaptor_input: AdaptorInput):
+        x = adaptor_input.adaptor_feature
+
+        mask = torch.sigmoid(x)
+
+        return MaskAdaptorOutput(logits=x, mask=mask)
+
+
 class ValueWithConfidenceAdaptor(UniCeptionAdaptorBase):
     def __init__(
         self,
@@ -285,19 +402,15 @@ class ValueWithConfidenceAdaptor(UniCeptionAdaptorBase):
         self.confidence_adaptor = confidence_adaptor
 
     def forward(self, adaptor_input: AdaptorInput):
-
         value_input, confidence_input = torch.split(
             adaptor_input.adaptor_feature,
             [self.value_adaptor.required_channels, self.confidence_adaptor.required_channels],
             dim=1,
         )
-
-        value_adaptor_input = adaptor_input
-        value_adaptor_input.adaptor_feature = value_input
-
-        confidence_adaptor_input = adaptor_input
-        confidence_adaptor_input.adaptor_feature = confidence_input
-
+        value_adaptor_input = AdaptorInput(adaptor_feature=value_input, output_shape_hw=adaptor_input.output_shape_hw)
+        confidence_adaptor_input = AdaptorInput(
+            adaptor_feature=confidence_input, output_shape_hw=adaptor_input.output_shape_hw
+        )
         value_output = self.value_adaptor(value_adaptor_input)
         confidence_output = self.confidence_adaptor(confidence_adaptor_input)
 
@@ -313,6 +426,7 @@ class FlowWithConfidenceAdaptor(ValueWithConfidenceAdaptor):
         flow_std: torch.Tensor,
         base_shape: Tuple[int, int],
         scale_strategy: str,
+        output_normalized_coordinate: bool,
         # confidence adaptor
         confidence_type: str,
         vmin: float,
@@ -323,35 +437,44 @@ class FlowWithConfidenceAdaptor(ValueWithConfidenceAdaptor):
         """
         Adaptor for the Flow with Confidence head in UniCeption.
         """
-        self.flow_adaptor = FlowAdaptor(
-            name=f"{name}", flow_mean=flow_mean, flow_std=flow_std, base_shape=base_shape, scale_strategy=scale_strategy
+        flow_adaptor = FlowAdaptor(
+            name=f"{name}",
+            flow_mean=flow_mean,
+            flow_std=flow_std,
+            base_shape=base_shape,
+            scale_strategy=scale_strategy,
+            output_normalized_coordinate=output_normalized_coordinate,
         )
 
-        self.confidence_adaptor = ConfidenceAdaptor(
+        confidence_adaptor = ConfidenceAdaptor(
             name=f"{name}_confidence", confidence_type=confidence_type, vmin=vmin, vmax=vmax
         )
 
-        super().__init__(
-            name, value_adaptor=self.flow_adaptor, confidence_adaptor=self.confidence_adaptor, *args, **kwargs
-        )
+        super().__init__(name, value_adaptor=flow_adaptor, confidence_adaptor=confidence_adaptor, *args, **kwargs)
 
 
-class MaskAdaptor(UniCeptionAdaptorBase):
+class PointMapWithConfidenceAdaptor(ValueWithConfidenceAdaptor):
     def __init__(
         self,
         name: str,
+        # pointmap adaptor
+        pointmap_mode: str,
+        pointmap_vmin: float,
+        pointmap_vmax: float,
+        # confidence adaptor
+        confidence_type: str,
+        confidence_vmin: float,
+        confidence_vmax: float,
         *args,
         **kwargs,
     ):
         """
-        Adaptor for the Mask head in UniCeption.
+        Adaptor for the PointMap with Confidence head in UniCeption.
         """
-        super().__init__(name, required_channels=1, *args, **kwargs)
+        pointmap_adaptor = PointMapAdaptor(name=f"{name}", mode=pointmap_mode, vmin=pointmap_vmin, vmax=pointmap_vmax)
 
-    def forward(self, adaptor_input: AdaptorInput):
+        confidence_adaptor = ConfidenceAdaptor(
+            name=f"{name}_confidence", confidence_type=confidence_type, vmin=confidence_vmin, vmax=confidence_vmax
+        )
 
-        x = adaptor_input.adaptor_feature
-
-        mask = torch.sigmoid(x)
-
-        return MaskAdaptorOutput(logits=x, mask=mask)
+        super().__init__(name, value_adaptor=pointmap_adaptor, confidence_adaptor=confidence_adaptor, *args, **kwargs)

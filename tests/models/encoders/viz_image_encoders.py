@@ -14,12 +14,12 @@ import torch.nn.functional as F
 from matplotlib import pyplot as plt
 from PIL import Image
 from sklearn.decomposition import PCA
+
 from uniception.models.encoders import *
 from uniception.models.encoders.image_normalizations import *
 
 
 class TestEncoders:
-
     def __init__(self, pca_save_folder, *args, **kwargs):
         super(TestEncoders, self).__init__(*args, **kwargs)
 
@@ -81,7 +81,6 @@ class TestEncoders:
         plt.close()
 
     def _visualize_encoder_features_consistency(self, encoder, image_size: Tuple[int, int]):
-
         img0, viz_img0 = self._get_example_input(
             image_size, encoder.data_norm_type, img_selection=1, return_viz_img=True
         )

@@ -1,6 +1,7 @@
 # Local Folders
 checkpoints/
 local/
+reference_data/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -3,8 +3,9 @@ Image normalizations for the different UniCeption image encoders.
 Image encoders defined in UniCeption must have their corresponding image normalization defined here.
 """
 
-import torch
 from dataclasses import dataclass
+
+import torch
 
 
 @dataclass

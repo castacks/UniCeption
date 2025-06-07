@@ -12,13 +12,14 @@ IntermediateFeatureReturner
 │   │   ├── ConfidenceAdaptor
 │   │   ├── ValueWithConfidenceAdaptor
 │   │   └── FlowWithConfidenceAdaptor
+│   │   └── PointMapWithConfidenceAdaptor
 │   └── DPTSegmentationProcessor
 │       └── MaskAdaptor
 └── LinearFeature
     └── ...(all adaptors)
 ```
 
-The diagram outlines how implemented classes are designed to interact with each other. 
+The diagram outlines how implemented classes are designed to interact with each other.
 
 ## Developer Guidelines
 
