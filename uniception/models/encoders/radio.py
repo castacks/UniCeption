@@ -215,11 +215,11 @@ class RADIOIntermediateFeatureReturner(RADIOEncoder, IntermediateFeatureReturner
             final_output, outputs = model_outputs
             final_features = final_output.features
             final_features = final_features.reshape(
-                batch_size, -1, self.enc_embed_dim, height // self.patch_size, width // self.patch_size
+                batch_size, self.enc_embed_dim, height // self.patch_size, width // self.patch_size
             ).contiguous()
             final_features = ViTEncoderOutput(features=final_features)
 
-        outputs = [FeatureWrapper(o) for o in outputs]
+        outputs = [FeatureWrapper(output) for output in outputs]
         intermediate_features = [
             ViTEncoderOutput(features=intermediate_output.features) for intermediate_output in outputs
         ]
@@ -288,5 +288,8 @@ if __name__ == "__main__":
     assert isinstance(output[0], ViTEncoderOutput), "First element of output must be the final features"
     assert isinstance(output[1], list), "Second element of output must be a list of intermediate features"
     assert isinstance(output[1][0], ViTEncoderOutput), "Output must be a list of ViTEncoderOutput"
+    assert torch.equal(
+        output[0].features, output[1][0].features
+    ), "Final features and intermediate features must be same"
 
     print("All Intermediate Feature Returner Tests have passed successfully!")

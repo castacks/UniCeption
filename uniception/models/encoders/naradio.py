@@ -20,12 +20,11 @@ class GaussKernelAttn(nn.Module):
     def __init__(
         self,
         orig_attn,
-        input_resolution: tuple,
         gauss_std: float,
-        chosen_cls_id: int,
         dim: int,
         qk_norm: bool = False,
         num_prefix_tokens: int = 8,
+        patch_size: int = 16,
     ) -> None:
         super().__init__()
         num_heads = orig_attn.num_heads
@@ -35,9 +34,9 @@ class GaussKernelAttn(nn.Module):
         self.scale = self.head_dim**-0.5
 
         self.addition_cache = dict()
-        self.input_resolution = input_resolution
-        self.chosen_cls_id = chosen_cls_id
+        self.input_resolution = None  # to be set when calling forward
         self.gauss_std = gauss_std
+        self.patch_size = patch_size
 
         self.qkv = orig_attn.qkv
         self.q_norm = orig_attn.q_norm if qk_norm else nn.Identity()
@@ -46,10 +45,6 @@ class GaussKernelAttn(nn.Module):
         self.proj = orig_attn.proj
         self.proj_drop = orig_attn.proj_drop
         self.num_prefix_tokens = num_prefix_tokens
-
-        # Cache for Gaussian window addition
-        self.cached_addition = None
-        self.cached_n_patches = None
 
     @staticmethod
     def gaussian_window(dim1, dim2, std=7.0):
@@ -78,25 +73,32 @@ class GaussKernelAttn(nn.Module):
 
     def prepare_gaussian_addition(self, n_patches, device):
         """Prepare the Gaussian addition matrix for the current input"""
-        if self.cached_n_patches != n_patches:
+        # Check if we have a cached addition matrix for these dimensions
+        if n_patches not in self.addition_cache:
             window_size = [side * 2 - 1 for side in n_patches]
             window = self.gaussian_window(*window_size, std=self.gauss_std)
             addition = self.get_attention_addition(*n_patches, window, self.num_prefix_tokens).to(device)
 
-            self.cached_addition = addition
-            self.cached_n_patches = n_patches
+            # Cache the addition matrix
+            self.addition_cache[n_patches] = addition
 
-        return self.cached_addition
+        # Return the cached addition matrix
+        return self.addition_cache[n_patches]
 
     def gauss_score_mod(self, score, b, h, q_idx, kv_idx, addition):
         """Score modification function for FlexAttention"""
         # Adding the precomputed Gaussian pattern to the attention score
         return score + addition[q_idx, kv_idx]
 
+    def set_input_resolution(self, input_resolution: Tuple[int, int]):
+        """Set the input resolution for the Gaussian attention window"""
+        self.input_resolution = input_resolution
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, N, C = x.shape
+        assert self.input_resolution is not None, "input_resolution must be set before forward pass"
         h, w = self.input_resolution
-        n_patches = (w // 16, h // 16)
+        n_patches = (w // self.patch_size, h // self.patch_size)
 
         qkv = self.qkv(x)
         q, k, v = qkv.chunk(3, dim=-1)
@@ -123,14 +125,11 @@ class GaussKernelAttn(nn.Module):
 
 
 class NARADIOEncoder(UniCeptionViTEncoderBase):
-    """UniCeption NARADIO Encoder based on NACLIP + RADIO models
+    """
+    UniCeption NARADIO (RayFronts) Encoder based on NACLIP & RADIO
 
-    The model modifies the attention of the last layer of RADIO following the
-    example of NACLIP improving spatial structure. And uses the Summary CLS
-    projection to project the patch-wise tokens to SIGLIP or CLIP language aligned
-    feature spaces. The model computes na-radio spatial or global features by
-    default and exposes functions to project those features to Siglip, or CLIP
-    feature spaces.
+    The model modifies the attention of the last layer of RADIO following NACLIP,
+    thereby improving the spatial patch features.
     """
 
     def __init__(
@@ -139,7 +138,6 @@ class NARADIOEncoder(UniCeptionViTEncoderBase):
         data_norm_type: str = "radio",
         patch_size: int = 16,
         model_version: str = "radio_v2.5-l",
-        input_resolution: Tuple[int, int] = [512, 512],
         gauss_std: float = 7.0,
         pretrained_checkpoint_path: str = None,
         torch_hub_force_reload: bool = False,
@@ -154,8 +152,7 @@ class NARADIOEncoder(UniCeptionViTEncoderBase):
             data_norm_type (str): Image normalization type. Default: "radio"
             patch_size (int): Patch size for the encoder. Default: 16
             model_version (str): Version of the RADIO model to load. Default: "radio_v2.5-l"
-            input_resolution: Tuple of ints (height, width) of the input images, needed to initialize the guassian attention window.
-            gauss_std: Standard deviation of the gaussian kernel.
+            gauss_std: Standard deviation of the gaussian kernel. Default: 7.0
             pretrained_checkpoint_path (str): Path to the pretrained checkpoint if using custom trained version of RADIO. Default: None
             torch_hub_force_reload (bool): Whether to force reload the model from torch hub. Default: False
         """
@@ -202,11 +199,10 @@ class NARADIOEncoder(UniCeptionViTEncoderBase):
         # Replace the attention of the last ViT block with the Gaussian Kernel based attention
         self.model.model.blocks[-1] = GaussKernelAttn(
             self.model.model.blocks[-1].attn,
-            input_resolution,
             gauss_std,
             dim=self.enc_embed_dim,
-            chosen_cls_id=None,
             num_prefix_tokens=self.model.num_summary_tokens,
+            patch_size=self.patch_size,
         )
 
     def forward(self, encoder_input: ViTEncoderInput) -> ViTEncoderOutput:
@@ -231,6 +227,9 @@ class NARADIOEncoder(UniCeptionViTEncoderBase):
             height % self.patch_size == 0 and width % self.patch_size == 0
         ), f"Input shape must be divisible by patch size: {self.patch_size}"
 
+        # Set input resolution for Gaussian attention
+        self.model.model.blocks[-1].set_input_resolution((height, width))
+
         # Forward pass throught the RADIO encoder
         summary, features = self.model(encoder_input.image)
 
@@ -253,7 +252,6 @@ class NARADIOIntermediateFeatureReturner(NARADIOEncoder, IntermediateFeatureRetu
         data_norm_type: str = "radio",
         patch_size: int = 16,
         model_version: str = "radio_v2.5-l",
-        input_resolution: Tuple[int, int] = [512, 512],
         gauss_std: float = 7.0,
         pretrained_checkpoint_path: str = None,
         indices: Union[int, List[int]] = [-1],
@@ -271,6 +269,7 @@ class NARADIOIntermediateFeatureReturner(NARADIOEncoder, IntermediateFeatureRetu
             data_norm_type (str): Image normalization type. Default: "radio"
             patch_size (int): Patch size for the encoder. Default: 16
             model_version (str): Version of the RADIO model to load. Default: "radio_v2.5-l"
+            gauss_std (float): Standard deviation of the gaussian kernel. Default: 7.0
             pretrained_checkpoint_path (str): Path to the pretrained checkpoint if using custom trained version of RADIO.
             indices (Optional[Union[int, List[int]]], optional): Indices of the layers to return. Defaults to [-1]. Options:
             - int: Return the last n layers.
@@ -286,7 +285,6 @@ class NARADIOIntermediateFeatureReturner(NARADIOEncoder, IntermediateFeatureRetu
             data_norm_type=data_norm_type,
             patch_size=patch_size,
             model_version=model_version,
-            input_resolution=input_resolution,
             gauss_std=gauss_std,
             pretrained_checkpoint_path=pretrained_checkpoint_path,
             *args,
@@ -326,6 +324,9 @@ class NARADIOIntermediateFeatureReturner(NARADIOEncoder, IntermediateFeatureRetu
             height % self.patch_size == 0 and width % self.patch_size == 0
         ), f"Input shape must be divisible by patch size: {self.patch_size}"
 
+        # Set input resolution for Gaussian attention
+        self.model.model.blocks[-1].set_input_resolution((height, width))
+
         # Extract the final features and intermediate features accordingly
         model_outputs = self.model.forward_intermediates(
             encoder_input.image,
@@ -344,11 +345,11 @@ class NARADIOIntermediateFeatureReturner(NARADIOEncoder, IntermediateFeatureRetu
             final_output, outputs = model_outputs
             final_features = final_output.features
             final_features = final_features.reshape(
-                batch_size, -1, self.enc_embed_dim, height // self.patch_size, width // self.patch_size
+                batch_size, self.enc_embed_dim, height // self.patch_size, width // self.patch_size
             ).contiguous()
             final_features = ViTEncoderOutput(features=final_features)
 
-        outputs = [FeatureWrapper(o) for o in outputs]
+        outputs = [FeatureWrapper(output) for output in outputs]
         intermediate_features = [
             ViTEncoderOutput(features=intermediate_output.features) for intermediate_output in outputs
         ]
@@ -362,7 +363,7 @@ class NARADIOIntermediateFeatureReturner(NARADIOEncoder, IntermediateFeatureRetu
 if __name__ == "__main__":
     # Init different versions of the RADIO Encoder
     for model_version in ["radio_v2.5-b", "radio_v2.5-l"]:
-        naradio_encoder = NARADIOEncoder(name="RADIOv2.5", model_version=model_version)
+        naradio_encoder = NARADIOEncoder(name="NARADIOv2.5", model_version=model_version)
 
     print("All NARADIO Encoders have been initialized successfully!")
 
@@ -371,7 +372,7 @@ if __name__ == "__main__":
 
     # Run the intermediate feature returner with last-n index
     naradio_intermediate_feature_returner = NARADIOIntermediateFeatureReturner(
-        name="RADIOv2.5", model_version="radio_v2.5-b", indices=6
+        name="NARADIOv2.5", model_version="radio_v2.5-b", indices=6
     )  # Last 6 layers
     dummy_input = ViTEncoderInput(image=torch.randn(1, 3, 224, 224), data_norm_type="radio")
     output = naradio_intermediate_feature_returner(dummy_input)
@@ -381,7 +382,7 @@ if __name__ == "__main__":
 
     # Run the intermediate feature returner with specific indices
     naradio_intermediate_feature_returner = NARADIOIntermediateFeatureReturner(
-        name="RADIOv2.5", model_version="radio_v2.5-b", indices=[0, 2, 4, 6]
+        name="NARADIOv2.5", model_version="radio_v2.5-b", indices=[0, 2, 4, 6]
     )  # Specific layers
     dummy_input = ViTEncoderInput(image=torch.randn(1, 3, 224, 224), data_norm_type="radio")
     output = naradio_intermediate_feature_returner(dummy_input)
@@ -391,7 +392,7 @@ if __name__ == "__main__":
 
     # Test the normalizing of intermediate features
     naradio_intermediate_feature_returner = NARADIOIntermediateFeatureReturner(
-        name="RADIOv2.5", model_version="radio_v2.5-b", norm_intermediate=False, intermediates_only=False
+        name="NARADIOv2.5", model_version="radio_v2.5-b", norm_intermediate=False, intermediates_only=False
     )  # Do not normalize
     dummy_input = ViTEncoderInput(image=torch.randn(1, 3, 224, 224), data_norm_type="radio")
     output = naradio_intermediate_feature_returner(dummy_input)
@@ -405,7 +406,7 @@ if __name__ == "__main__":
         ), "Final features and intermediate features must be different"
 
     naradio_intermediate_feature_returner = NARADIOIntermediateFeatureReturner(
-        name="RADIOv2.5", model_version="radio_v2.5-b", norm_intermediate=True, intermediates_only=False
+        name="NARADIOv2.5", model_version="radio_v2.5-b", norm_intermediate=True, intermediates_only=False
     )
     dummy_input = ViTEncoderInput(image=torch.randn(1, 3, 224, 224), data_norm_type="radio")
     output = naradio_intermediate_feature_returner(dummy_input)
@@ -413,5 +414,8 @@ if __name__ == "__main__":
     assert isinstance(output[0], ViTEncoderOutput), "First element of output must be the final features"
     assert isinstance(output[1], list), "Second element of output must be a list of intermediate features"
     assert isinstance(output[1][0], ViTEncoderOutput), "Output must be a list of ViTEncoderOutput"
+    assert torch.equal(
+        output[0].features, output[1][0].features
+    ), "Final features and intermediate features must be same"
 
     print("All Intermediate Feature Returner Tests have passed successfully!")
