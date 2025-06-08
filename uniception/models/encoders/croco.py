@@ -7,6 +7,7 @@ from typing import Callable, List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
+
 from uniception.models.encoders.base import UniCeptionViTEncoderBase, ViTEncoderInput, ViTEncoderOutput
 from uniception.models.libs.croco.blocks import Block
 from uniception.models.libs.croco.patch_embed import get_patch_embed

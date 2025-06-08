@@ -10,6 +10,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.nn.init import trunc_normal_
+
 from uniception.models.encoders.base import (
     UniCeptionViTEncoderBase,
     ViTEncoderInput,

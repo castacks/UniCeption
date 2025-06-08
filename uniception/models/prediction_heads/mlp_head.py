@@ -6,6 +6,7 @@ Assumes inputs of size BC (B: batch, C: Channels)
 
 import torch
 import torch.nn as nn
+
 from uniception.models.prediction_heads.base import PredictionHeadTokenInput, SummaryTaskOutput
 
 

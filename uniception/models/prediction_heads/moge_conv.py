@@ -10,6 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils
 import torch.utils.checkpoint
+
 from uniception.models.prediction_heads.base import PixelTaskOutput, PredictionHeadLayeredInput
 
 
@@ -286,7 +287,6 @@ if __name__ == "__main__":
     model_input = PredictionHeadLayeredInput(list_features=input_feats, target_output_shape=image_shape)
 
     with torch.autocast("cuda", dtype=torch.float16):
-
         # Warm-up to stabilize GPU performance
         for _ in range(3):
             output = head(model_input)

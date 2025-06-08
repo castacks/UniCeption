@@ -12,6 +12,7 @@ import torch
 import torch.nn as nn
 from jaxtyping import Float
 from torch import Tensor
+
 from uniception.models.info_sharing.base import (
     MultiSetTransformerInput,
     MultiSetTransformerOutput,
@@ -411,10 +412,7 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
     def forward(
         self,
         model_input: MultiViewTransformerInput,
-    ) -> Union[
-        List[MultiViewTransformerOutput],
-        Tuple[MultiViewTransformerOutput, List[MultiViewTransformerOutput]],
-    ]:
+    ) -> Union[List[MultiViewTransformerOutput], Tuple[MultiViewTransformerOutput, List[MultiViewTransformerOutput]],]:
         """
         Forward interface for the Multi-View Global-Attention Transformer with Intermediate Feature Return.
 

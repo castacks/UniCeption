@@ -7,6 +7,7 @@ from typing import Callable, List, Optional, Type, Union
 
 import torch
 import torch.nn as nn
+
 from uniception.models.encoders.base import EncoderGlobalRepInput, EncoderGlobalRepOutput
 
 

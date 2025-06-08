@@ -9,6 +9,7 @@ from typing import Callable, Optional, Tuple, Union
 import torch
 import torch.nn as nn
 from torch.nn.init import trunc_normal_
+
 from uniception.models.encoders.base import (
     UniCeptionViTEncoderBase,
     ViTEncoderInput,
