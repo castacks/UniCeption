@@ -9,17 +9,17 @@ from typing import Callable, List, Optional, Tuple, Type, Union
 import torch
 import torch.nn as nn
 
-from uniception.models.info_sharing.base import (
+from uniception.models.info_sharing.base import UniCeptionInfoSharingBase
+from uniception.models.info_sharing.cross_attention_transformer import (
     MultiViewTransformerInput,
     MultiViewTransformerOutput,
-    UniCeptionInfoSharingBase,
+    PositionGetter,
 )
 from uniception.models.utils.intermediate_feature_return import IntermediateFeatureReturner, feature_take_indices
-from uniception.models.utils.positional_encoding import PositionGetter
-from uniception.models.utils.transformer_blocks import CrossAttentionBlock, Mlp
+from uniception.models.utils.transformer_blocks import DiffCrossAttentionBlock, Mlp
 
 
-class MultiViewCrossAttentionTransformer(UniCeptionInfoSharingBase):
+class DifferentialMultiViewCrossAttentionTransformer(UniCeptionInfoSharingBase):
     "UniCeption Multi-View Cross-Attention Transformer for information sharing across image features from different views."
 
     def __init__(
@@ -55,12 +55,11 @@ class MultiViewCrossAttentionTransformer(UniCeptionInfoSharingBase):
         Args:
             input_embed_dim (int): Dimension of input embeddings.
             num_views (int): Number of views (input feature sets).
-            size (str): String to indicate interpretable size of the transformer (for e.g., base, large, ...). (default: None)
             depth (int): Number of transformer layers. (default: 12, base size)
             dim (int): Dimension of the transformer. (default: 768, base size)
             num_heads (int): Number of attention heads. (default: 12, base size)
             mlp_ratio (float): Ratio of hidden to input dimension in MLP (default: 4.)
-            qkv_bias (bool): Whether to include bias in qkv projection (default: True)
+            qkv_bias (bool): Whether to include bias in qkv projection (default: False)
             qk_norm (bool): Whether to normalize q and k (default: False)
             proj_drop (float): Dropout rate for output (default: 0.)
             attn_drop (float): Dropout rate for attention weights (default: 0.)
@@ -105,11 +104,13 @@ class MultiViewCrossAttentionTransformer(UniCeptionInfoSharingBase):
             self.proj_embed = nn.Identity()
 
         # Initialize the cross-attention blocks for a single view
+        assert num_heads % 2 == 0, "Number of heads must be divisible by 2 for differential cross-attention."
         cross_attention_blocks = nn.ModuleList(
             [
-                CrossAttentionBlock(
+                DiffCrossAttentionBlock(
+                    depth=i,
                     dim=self.dim,
-                    num_heads=self.num_heads,
+                    num_heads=self.num_heads // 2,
                     mlp_ratio=self.mlp_ratio,
                     qkv_bias=self.qkv_bias,
                     qk_norm=self.qk_norm,
@@ -123,7 +124,7 @@ class MultiViewCrossAttentionTransformer(UniCeptionInfoSharingBase):
                     custom_positional_encoding=self.custom_positional_encoding,
                     norm_cross_tokens=self.norm_cross_tokens,
                 )
-                for _ in range(self.depth)
+                for i in range(self.depth)
             ]
         )
 
@@ -258,7 +259,9 @@ class MultiViewCrossAttentionTransformer(UniCeptionInfoSharingBase):
         return MultiViewTransformerOutput(features=output_multi_view_features)
 
 
-class MultiViewCrossAttentionTransformerIFR(MultiViewCrossAttentionTransformer, IntermediateFeatureReturner):
+class DifferentialMultiViewCrossAttentionTransformerIFR(
+    DifferentialMultiViewCrossAttentionTransformer, IntermediateFeatureReturner
+):
     "Intermediate Feature Returner for UniCeption Multi-View Cross-Attention Transformer"
 
     def __init__(
@@ -298,12 +301,11 @@ class MultiViewCrossAttentionTransformerIFR(MultiViewCrossAttentionTransformer, 
         Args:
             input_embed_dim (int): Dimension of input embeddings.
             num_views (int): Number of views (input feature sets).
-            size (str): String to indicate interpretable size of the transformer (for e.g., base, large, ...). (default: None)
             depth (int): Number of transformer layers. (default: 12, base size)
             dim (int): Dimension of the transformer. (default: 768, base size)
             num_heads (int): Number of attention heads. (default: 12, base size)
             mlp_ratio (float): Ratio of hidden to input dimension in MLP (default: 4.)
-            qkv_bias (bool): Whether to include bias in qkv projection (default: True)
+            qkv_bias (bool): Whether to include bias in qkv projection (default: False)
             qk_norm (bool): Whether to normalize q and k (default: False)
             proj_drop (float): Dropout rate for output (default: 0.)
             attn_drop (float): Dropout rate for attention weights (default: 0.)
@@ -324,7 +326,7 @@ class MultiViewCrossAttentionTransformerIFR(MultiViewCrossAttentionTransformer, 
             gradient_checkpointing (bool, optional): Whether to use gradient checkpointing for memory efficiency. (default: False)
         """
         # Init the base classes
-        MultiViewCrossAttentionTransformer.__init__(
+        DifferentialMultiViewCrossAttentionTransformer.__init__(
             self,
             name=name,
             input_embed_dim=input_embed_dim,
@@ -489,7 +491,9 @@ if __name__ == "__main__":
     # Init multi-view cross-attention transformer with no custom positional encoding and run a forward pass
     for num_views in [2, 3, 4]:
         print(f"Testing MultiViewCrossAttentionTransformer with {num_views} views ...")
-        model = MultiViewCrossAttentionTransformer(name="MV-CAT", input_embed_dim=1024, num_views=num_views)
+        model = DifferentialMultiViewCrossAttentionTransformer(
+            name="MV-DCAT", input_embed_dim=1024, num_views=num_views
+        )
         model_input = [torch.rand(1, 1024, 14, 14) for _ in range(num_views)]
         model_input = MultiViewTransformerInput(features=model_input)
         model_output = model(model_input)
@@ -498,9 +502,11 @@ if __name__ == "__main__":
 
     # Init multi-view cross-attention transformer with custom positional encoding and run a forward pass
     for num_views in [2, 3, 4]:
-        print(f"Testing MultiViewCrossAttentionTransformer with {num_views} views and custom positional encoding ...")
-        model = MultiViewCrossAttentionTransformer(
-            name="MV-CAT",
+        print(
+            f"Testing Differential MultiViewCrossAttentionTransformer with {num_views} views and custom positional encoding ..."
+        )
+        model = DifferentialMultiViewCrossAttentionTransformer(
+            name="MV-DCAT",
             input_embed_dim=1024,
             num_views=num_views,
             custom_positional_encoding=dummy_positional_encoding,
@@ -517,8 +523,8 @@ if __name__ == "__main__":
     print("Running Intermediate Feature Returner Tests ...")
 
     # Run the intermediate feature returner with last-n index
-    model_intermediate_feature_returner = MultiViewCrossAttentionTransformerIFR(
-        name="MV-CAT-IFR",
+    model_intermediate_feature_returner = DifferentialMultiViewCrossAttentionTransformerIFR(
+        name="MV-DCAT-IFR",
         input_embed_dim=1024,
         num_views=2,
         indices=6,  # Last 6 layers
@@ -533,8 +539,8 @@ if __name__ == "__main__":
     assert len(output[1][0].features) == 2
 
     # Run the intermediate feature returner with specific indices
-    model_intermediate_feature_returner = MultiViewCrossAttentionTransformerIFR(
-        name="MV-CAT-IFR",
+    model_intermediate_feature_returner = DifferentialMultiViewCrossAttentionTransformerIFR(
+        name="MV-DCAT-IFR",
         input_embed_dim=1024,
         num_views=2,
         indices=[0, 2, 4, 6],  # Specific indices
@@ -549,8 +555,8 @@ if __name__ == "__main__":
     assert len(output[1][0].features) == 2
 
     # Test the normalizing of intermediate features
-    model_intermediate_feature_returner = MultiViewCrossAttentionTransformerIFR(
-        name="MV-CAT-IFR",
+    model_intermediate_feature_returner = DifferentialMultiViewCrossAttentionTransformerIFR(
+        name="MV-DCAT-IFR",
         input_embed_dim=1024,
         num_views=2,
         indices=[-1],  # Last layer
@@ -564,8 +570,8 @@ if __name__ == "__main__":
             output[0].features[view_idx], output[1][-1].features[view_idx]
         ), "Final features and intermediate features (last layer) must be different."
 
-    model_intermediate_feature_returner = MultiViewCrossAttentionTransformerIFR(
-        name="MV-CAT-IFR",
+    model_intermediate_feature_returner = DifferentialMultiViewCrossAttentionTransformerIFR(
+        name="MV-DCAT-IFR",
         input_embed_dim=1024,
         num_views=2,
         indices=[-1],  # Last layer

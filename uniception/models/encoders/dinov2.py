@@ -5,6 +5,8 @@ Encoder Class for DINOv2
 from typing import List, Optional, Union
 
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 from uniception.models.encoders.base import UniCeptionViTEncoderBase, ViTEncoderInput, ViTEncoderOutput
 from uniception.models.utils.intermediate_feature_return import IntermediateFeatureReturner
@@ -23,6 +25,8 @@ class DINOv2Encoder(UniCeptionViTEncoderBase):
         pretrained_checkpoint_path: str = None,
         torch_hub_force_reload: bool = False,
         gradient_checkpointing: bool = False,
+        keep_first_n_layers: Optional[int] = None,
+        use_pytorch_sdpa=True,
         *args,
         **kwargs,
     ):
@@ -38,6 +42,8 @@ class DINOv2Encoder(UniCeptionViTEncoderBase):
             pretrained_checkpoint_path (str): Path to the pretrained checkpoint if using custom trained version of DINOv2. Default: None
             torch_hub_force_reload (bool): Whether to force reload the model from torch hub. Default: False
             gradient_checkpointing (bool): Whether to use gradient checkpointing to save GPU memory during backward call. Default: False
+            keep_first_n_layers (Optional[int]): If specified, only the first n layers of the model will be kept. Default: None
+            use_pytorch_sdpa (bool): Whether to use PyTorch native SDPA for attention layers. Default: True
         """
         # Init the base class
         name = name if not with_registers else f"{name}_reg"
@@ -84,6 +90,18 @@ class DINOv2Encoder(UniCeptionViTEncoderBase):
         except:  # Load from cache
             self.model = torch.hub.load("facebookresearch/dinov2", DINO_MODELS[self.with_registers][self.version])
 
+        del (
+            self.model.mask_token
+        )  # This parameter is unused in producing patch features, and will lead to unused parameters
+
+        # Keep only the first n layers of the model if keep_first_n_layers is specified
+        if keep_first_n_layers is not None:
+            self.model.blocks = nn.ModuleList(self.model.blocks[:keep_first_n_layers])
+
+        # Use Native Torch SDPA for attention layers if specified (instead of DINOv2's XFormers)
+        if use_pytorch_sdpa:
+            self.enable_pytorch_native_sdpa()
+
         # Wrap the transformer blocks with support for gradient checkpointing if required
         if self.gradient_checkpointing:
             for i in range(len(self.model.blocks)):
@@ -94,6 +112,36 @@ class DINOv2Encoder(UniCeptionViTEncoderBase):
             print(f"Loading custom pretrained DINOv2 checkpoint from {pretrained_checkpoint_path}")
             ckpt = torch.load(pretrained_checkpoint_path, weights_only=False)
             print(self.load_state_dict(ckpt["model"]))
+
+    def enable_pytorch_native_sdpa(self):
+        "Enable PyTorch native SDPA for attention layers"
+        for i in range(len(self.model.blocks)):
+            self.model.blocks[i].attn = self.wrap_dinov2_attention_with_sdpa(self.model.blocks[i].attn)
+
+    def wrap_dinov2_attention_with_sdpa(self, module: nn.Module):
+        "Wrap DINOv2 attention module with PyTorch native SDPA"
+        assert torch.__version__ >= "2.0", "SDPA requires PyTorch 2.0 or later"
+
+        class _AttentionWrapper(module.__class__):
+            "SDPA Attention Wrapper Class"
+
+            def forward(self, x: torch.Tensor, attn_bias=None) -> torch.Tensor:
+                B, N, C = x.shape
+                qkv = (
+                    self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+                )  # (3, B, H, N, C // H)
+
+                q, k, v = torch.unbind(qkv, 0)  # (B, H, N, C // H)
+
+                x = F.scaled_dot_product_attention(q, k, v, attn_bias)
+                x = x.permute(0, 2, 1, 3).reshape(B, N, C)
+
+                x = self.proj(x)
+                x = self.proj_drop(x)
+                return x
+
+        module.__class__ = _AttentionWrapper
+        return module
 
     def forward(self, encoder_input: ViTEncoderInput) -> ViTEncoderOutput:
         """
@@ -142,6 +190,7 @@ class DINOv2IntermediateFeatureReturner(DINOv2Encoder, IntermediateFeatureReturn
         with_registers: bool = False,
         pretrained_checkpoint_path: str = None,
         indices: Optional[Union[int, List[int]]] = 1,
+        keep_first_n_layers: Optional[int] = None,
         norm_intermediate: bool = True,
         *args,
         **kwargs,
@@ -159,6 +208,7 @@ class DINOv2IntermediateFeatureReturner(DINOv2Encoder, IntermediateFeatureReturn
             indices (Optional[Union[int, List[int]]], optional): Indices of the layers to return. Defaults to 1. Options:
             - int: Return the last n layers.
             - List[int]: Return the intermediate layers at the specified indices.
+            keep_first_n_layers (Optional[int], optional): If specified, only the first n layers of the model will be kept. Defaults to None.
             norm_intermediate (bool, optional): Whether to normalize the intermediate features. Defaults to True.
         """
         # Init the base classes
@@ -169,6 +219,7 @@ class DINOv2IntermediateFeatureReturner(DINOv2Encoder, IntermediateFeatureReturn
             patch_size=patch_size,
             size=size,
             with_registers=with_registers,
+            keep_first_n_layers=keep_first_n_layers,
             pretrained_checkpoint_path=pretrained_checkpoint_path,
             *args,
             **kwargs,
@@ -200,6 +251,9 @@ class DINOv2IntermediateFeatureReturner(DINOv2Encoder, IntermediateFeatureReturn
         assert (
             height % self.patch_size == 0 and width % self.patch_size == 0
         ), f"Input shape must be divisible by patch size: {self.patch_size}"
+
+        if self.indices is None:
+            self.indices = range(len(self.model.blocks))
 
         # Extract the intermediate features from the DINOv2 model
         intermediate_features = self.model.get_intermediate_layers(
@@ -257,3 +311,23 @@ if __name__ == "__main__":
     assert len(output) == 4, "Output must have length of intermediate features equal to the number of indices"
 
     print("All Intermediate Feature Returner Tests have passed successfully!")
+
+    from uniception.models.encoders.utils import profile_encoder
+
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+
+    # Profile the DINOv2 Encoder
+    dinov2_encoder = DINOv2Encoder(
+        name="dinov2_large", size="large", use_pytorch_sdpa=True, gradient_checkpointing=True, keep_first_n_layers=12
+    ).cuda()
+    dummy_input = ViTEncoderInput(image=torch.randn(24, 3, 560, 420).cuda(), data_norm_type="dinov2")
+
+    class Profiler:
+        @profile_encoder(num_warmup=3, num_runs=20, autocast_precision="bfloat16", use_compile=True, dynamic=False)
+        def run_fn(self):
+            output = dinov2_encoder(dummy_input)
+            return output
+
+    profiler = Profiler()
+    profiler.run_fn()

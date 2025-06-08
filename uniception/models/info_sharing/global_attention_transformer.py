@@ -2,16 +2,12 @@
 UniCeption Global-Attention Transformer for Information Sharing
 """
 
-from copy import deepcopy
-from dataclasses import dataclass
 from functools import partial
 from typing import Callable, List, Optional, Tuple, Type, Union
 
 import numpy as np
 import torch
 import torch.nn as nn
-from jaxtyping import Float
-from torch import Tensor
 
 from uniception.models.info_sharing.base import (
     MultiSetTransformerInput,
@@ -20,6 +16,7 @@ from uniception.models.info_sharing.base import (
     MultiViewTransformerOutput,
     UniCeptionInfoSharingBase,
 )
+from uniception.models.libs.croco.pos_embed import RoPE2D
 from uniception.models.utils.intermediate_feature_return import IntermediateFeatureReturner, feature_take_indices
 from uniception.models.utils.positional_encoding import PositionGetter
 from uniception.models.utils.transformer_blocks import Mlp, SelfAttentionBlock
@@ -48,8 +45,9 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
         act_layer: Type[nn.Module] = nn.GELU,
         norm_layer: Union[Type[nn.Module], Callable[..., nn.Module]] = partial(nn.LayerNorm, eps=1e-6),
         mlp_layer: Type[nn.Module] = Mlp,
-        custom_positional_encoding: Optional[Callable] = None,
+        custom_positional_encoding: Optional[Union[str, Callable]] = None,
         pretrained_checkpoint_path: Optional[str] = None,
+        gradient_checkpointing: bool = False,
         *args,
         **kwargs,
     ):
@@ -76,6 +74,7 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
             mlp_layer (nn.Module): MLP layer (default: Mlp)
             custom_positional_encoding (Callable): Custom positional encoding function (default: None)
             pretrained_checkpoint_path (str, optional): Path to the pretrained checkpoint. (default: None)
+            gradient_checkpointing (bool, optional): Whether to use gradient checkpointing for memory efficiency. (default: False)
         """
         # Initialize the base class
         super().__init__(name=name, size=size, *args, **kwargs)
@@ -99,12 +98,21 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
         self.mlp_layer = mlp_layer
         self.custom_positional_encoding = custom_positional_encoding
         self.pretrained_checkpoint_path = pretrained_checkpoint_path
+        self.gradient_checkpointing = gradient_checkpointing
 
         # Initialize the projection layer for input embeddings
         if self.input_embed_dim != self.dim:
             self.proj_embed = nn.Linear(self.input_embed_dim, self.dim, bias=True)
         else:
             self.proj_embed = nn.Identity()
+
+        # Initialize custom position encodings
+        if self.custom_positional_encoding is not None and isinstance(self.custom_positional_encoding, str):
+            if self.custom_positional_encoding == "rope":
+                self.rope = RoPE2D(freq=100.0, F0=1.0)
+                self.custom_positional_encoding = self.rope
+            else:
+                raise ValueError(f"Unknown custom positional encoding: {self.custom_positional_encoding}")
 
         # Initialize the self-attention blocks which ingest all views at once
         self.self_attention_blocks = nn.ModuleList(
@@ -151,6 +159,11 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
             )
             ckpt = torch.load(self.pretrained_checkpoint_path, weights_only=False)
             print(self.load_state_dict(ckpt["model"]))
+
+        # Apply gradient checkpointing if enabled
+        if self.gradient_checkpointing:
+            for i, block in enumerate(self.self_attention_blocks):
+                self.self_attention_blocks[i] = self.wrap_module_with_gradient_checkpointing(block)
 
     def _get_sinusoid_encoding_table(self, n_position, d_hid, base):
         "Sinusoid position encoding table"
@@ -342,6 +355,7 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
         indices: Optional[Union[int, List[int]]] = None,
         norm_intermediate: bool = True,
         intermediates_only: bool = False,
+        gradient_checkpointing: bool = False,
         *args,
         **kwargs,
     ):
@@ -369,12 +383,13 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
             mlp_layer (nn.Module): MLP layer (default: Mlp)
             custom_positional_encoding (Callable): Custom positional encoding function (default: None)
             pretrained_checkpoint_path (str, optional): Path to the pretrained checkpoint. (default: None)
-            indices (Optional[Union[int, List[int]]], optional): Indices of the layers to return. Defaults to None. Options:
+            indices (Optional[Union[int, List[int]]], optional): Indices of the layers to return. (default: None) Options:
             - None: Return all intermediate layers.
             - int: Return the last n layers.
             - List[int]: Return the intermediate layers at the specified indices.
-            norm_intermediate (bool, optional): Whether to normalize the intermediate features. Defaults to True.
-            intermediates_only (bool, optional): Whether to return only the intermediate features. Defaults to True.
+            norm_intermediate (bool, optional): Whether to normalize the intermediate features. (default: True)
+            intermediates_only (bool, optional): Whether to return only the intermediate features. (default: False)
+            gradient_checkpointing (bool, optional): Whether to use gradient checkpointing for memory efficiency. (default: False)
         """
         # Init the base classes
         MultiViewGlobalAttentionTransformer.__init__(
@@ -399,6 +414,7 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
             mlp_layer=mlp_layer,
             custom_positional_encoding=custom_positional_encoding,
             pretrained_checkpoint_path=pretrained_checkpoint_path,
+            gradient_checkpointing=gradient_checkpointing,
             *args,
             **kwargs,
         )
@@ -412,7 +428,10 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
     def forward(
         self,
         model_input: MultiViewTransformerInput,
-    ) -> Union[List[MultiViewTransformerOutput], Tuple[MultiViewTransformerOutput, List[MultiViewTransformerOutput]],]:
+    ) -> Union[
+        List[MultiViewTransformerOutput],
+        Tuple[MultiViewTransformerOutput, List[MultiViewTransformerOutput]],
+    ]:
         """
         Forward interface for the Multi-View Global-Attention Transformer with Intermediate Feature Return.
 
@@ -614,6 +633,7 @@ class GlobalAttentionTransformer(UniCeptionInfoSharingBase):
         norm_layer: Union[Type[nn.Module], Callable[..., nn.Module]] = partial(nn.LayerNorm, eps=1e-6),
         mlp_layer: Type[nn.Module] = Mlp,
         pretrained_checkpoint_path: Optional[str] = None,
+        gradient_checkpointing: bool = False,
         *args,
         **kwargs,
     ):
@@ -639,6 +659,7 @@ class GlobalAttentionTransformer(UniCeptionInfoSharingBase):
             norm_layer (nn.Module): Normalization layer (default: nn.LayerNorm)
             mlp_layer (nn.Module): MLP layer (default: Mlp)
             pretrained_checkpoint_path (str, optional): Path to the pretrained checkpoint. (default: None)
+            gradient_checkpointing (bool, optional): Whether to use gradient checkpointing for memory efficiency. (default: False)
         """
         # Initialize the base class
         super().__init__(name=name, size=size, *args, **kwargs)
@@ -661,6 +682,7 @@ class GlobalAttentionTransformer(UniCeptionInfoSharingBase):
         self.norm_layer = norm_layer
         self.mlp_layer = mlp_layer
         self.pretrained_checkpoint_path = pretrained_checkpoint_path
+        self.gradient_checkpointing = gradient_checkpointing
 
         # Initialize the projection layer for input embeddings
         if self.input_embed_dim != self.dim:
@@ -706,6 +728,11 @@ class GlobalAttentionTransformer(UniCeptionInfoSharingBase):
             print(f"Loading pretrained global-attention transformer weights from {self.pretrained_checkpoint_path} ...")
             ckpt = torch.load(self.pretrained_checkpoint_path, weights_only=False)
             print(self.load_state_dict(ckpt["model"]))
+
+        # Apply gradient checkpointing if enabled
+        if self.gradient_checkpointing:
+            for i, block in enumerate(self.self_attention_blocks):
+                self.self_attention_blocks[i] = self.wrap_module_with_gradient_checkpointing(block)
 
     def _get_sinusoid_encoding_table(self, n_position, d_hid, base):
         "Sinusoid position encoding table"

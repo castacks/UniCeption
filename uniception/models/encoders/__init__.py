@@ -13,18 +13,20 @@ from uniception.models.encoders.base import (
     ViTEncoderNonImageInput,
     ViTEncoderOutput,
 )
-from uniception.models.encoders.croco import CroCoEncoder
+from uniception.models.encoders.cosmos import CosmosEncoder
+from uniception.models.encoders.croco import CroCoEncoder, CroCoIntermediateFeatureReturner
 from uniception.models.encoders.dense_rep_encoder import DenseRepresentationEncoder
 from uniception.models.encoders.dinov2 import DINOv2Encoder, DINOv2IntermediateFeatureReturner
 from uniception.models.encoders.global_rep_encoder import GlobalRepresentationEncoder
 from uniception.models.encoders.naradio import NARADIOEncoder
 from uniception.models.encoders.patch_embedder import PatchEmbedder
-from uniception.models.encoders.radio import RADIOEncoder
+from uniception.models.encoders.radio import RADIOEncoder, RADIOIntermediateFeatureReturner
 
 # Define encoder configurations
 ENCODER_CONFIGS = {
     "croco": {
         "class": CroCoEncoder,
+        "intermediate_feature_returner_class": CroCoIntermediateFeatureReturner,
         "supported_models": ["CroCov2", "DUSt3R", "MASt3R"],
     },
     "dense_rep_encoder": {
@@ -33,11 +35,8 @@ ENCODER_CONFIGS = {
     },
     "dinov2": {
         "class": DINOv2Encoder,
+        "intermediate_feature_returner_class": DINOv2IntermediateFeatureReturner,
         "supported_models": ["DINOv2", "DINOv2-Registers", "DINOv2-Depth-Anythingv2"],
-    },
-    "dinov2_intermediate_feature_returner": {
-        "class": DINOv2IntermediateFeatureReturner,
-        "supported_models": ["DINOv2-Intermediate-Feature-Returner"],
     },
     "global_rep_encoder": {
         "class": GlobalRepresentationEncoder,
@@ -49,7 +48,12 @@ ENCODER_CONFIGS = {
     },
     "radio": {
         "class": RADIOEncoder,
+        "intermediate_feature_returner_class": RADIOIntermediateFeatureReturner,
         "supported_models": ["RADIO", "E-RADIO"],
+    },
+    "cosmos": {
+        "class": CosmosEncoder,
+        "supported_models": ["Cosmos-Tokenizer CI8x8", "Cosmos-Tokenizer CI16x16"],
     },
     "naradio": {
         "class": NARADIOEncoder,
@@ -78,6 +82,29 @@ def encoder_factory(encoder_str: str, **kwargs) -> UniCeptionEncoderBase:
 
     encoder_config = ENCODER_CONFIGS[encoder_str]
     encoder_class = encoder_config["class"]
+
+    return encoder_class(**kwargs)
+
+
+def feature_returner_encoder_factory(encoder_str: str, **kwargs) -> UniCeptionEncoderBase:
+    """
+    Factory for UniCeption Encoders with support for intermediate feature returning.
+    Please use python3 -m uniception.models.encoders.list to see available encoders.
+
+    Args:
+        encoder_str (str): Name of the encoder to create.
+        **kwargs: Additional keyword arguments to pass to the encoder constructor.
+
+    Returns:
+        UniCeptionEncoderBase: An instance of the specified encoder.
+    """
+    if encoder_str not in ENCODER_CONFIGS:
+        raise ValueError(
+            f"Unknown encoder: {encoder_str}. For valid encoder_str options, please use python3 -m uniception.models.encoders.list"
+        )
+
+    encoder_config = ENCODER_CONFIGS[encoder_str]
+    encoder_class = encoder_config["intermediate_feature_returner_class"]
 
     return encoder_class(**kwargs)
 
@@ -179,6 +206,13 @@ def _make_encoder_test(encoder_str: str, **kwargs) -> UniCeptionEncoderBase:
             name=encoder_str,
             model_version=encoder_str,
             eradio_input_shape=eradio_input_shape,
+        )
+    elif "cosmos" in encoder_str:
+        patch_size = int(encoder_str.split("x")[-1])
+        return CosmosEncoder(
+            name=encoder_str,
+            patch_size=patch_size,
+            pretrained_checkpoint_path=f"{relative_checkpoint_path}/Cosmos-Tokenizer-CI{patch_size}x{patch_size}/encoder.pth",
         )
     elif "patch_embedder" in encoder_str:
         return PatchEmbedder(
