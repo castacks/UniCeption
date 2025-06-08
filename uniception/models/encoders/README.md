@@ -8,6 +8,7 @@
    - `CroCoIntermediateFeatureReturner`
 - `DINOv2Encoder`
    - `DINOv2IntermediateFeatureReturner`
+- `PatchEmbedder`
 - `RADIOEncoder`
    - `RADIOIntermediateFeatureReturner`
 
@@ -64,11 +65,12 @@ To add a new encoder, follow these steps:
 
 4. **Update `__init__.py`**:
    - Import the new encoder class in `__init__.py`.
+   - Add the new encoder to the encoder configuration dictionary `ENCODER_CONFIGS` so that it can be instantiated via the encoder factory.
    - Update the `_make_encoder_test` function to include the new encoder.
 
 5. **Run Encoder Unit Tests**:
-   - Add your new encoder to the encoder list in the TestEncoders class in `tests/models/encoders/test_encoders.py`.
-   - Run `python3 tests/models/encoders/test_encoders.py` to test the basic expected functionality of UniCeption encoders.
+   - Run `pytest -vs tests/models/encoders/test_encoders.py --encoder-name="<new_encoder>"` to test the basic expected functionality of UniCeption encoders.
+   - Also, add your new encoder to the list in the encoders() in `tests/models/encoders/test_encoders.py` so that it can be tested along with all the existing encoders.
    - Optionally, for image encoders, the unit tests in `tests/models/encoders/viz_image_encoders.py` save PCA visualizations of the encoder outputs to the `local/pca_images` directory.
 
 ## Example Encoder Implementation

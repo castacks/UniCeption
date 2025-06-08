@@ -11,6 +11,8 @@ from uniception.models.prediction_heads.base import (
     PredictionHeadOutput,
     RegressionAdaptorOutput,
     RegressionWithConfidenceAdaptorOutput,
+    RegressionWithConfidenceAndMaskAdaptorOutput,
+    RegressionWithMaskAdaptorOutput,
     UniCeptionAdaptorBase,
     UniCeptionPredictionHeadBase,
 )

@@ -16,7 +16,8 @@ IntermediateFeatureReturner
 │   └── DPTSegmentationProcessor
 │       └── MaskAdaptor
 └── LinearFeature
-    └── ...(all adaptors)
+│   └── ...(all adaptors)
+└── PoseHead
 ```
 
 The diagram outlines how implemented classes are designed to interact with each other.

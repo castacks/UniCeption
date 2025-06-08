@@ -24,9 +24,9 @@ class DINOv2Encoder(UniCeptionViTEncoderBase):
         with_registers: bool = False,
         pretrained_checkpoint_path: str = None,
         torch_hub_force_reload: bool = False,
+        gradient_checkpointing: bool = False,
         keep_first_n_layers: Optional[int] = None,
         use_pytorch_sdpa=True,
-        gradient_checkpointing=False,
         *args,
         **kwargs,
     ):
@@ -41,6 +41,7 @@ class DINOv2Encoder(UniCeptionViTEncoderBase):
             with_registers (bool): Whether to use the DINOv2 model with registers. Default: False
             pretrained_checkpoint_path (str): Path to the pretrained checkpoint if using custom trained version of DINOv2. Default: None
             torch_hub_force_reload (bool): Whether to force reload the model from torch hub. Default: False
+            gradient_checkpointing (bool): Whether to use gradient checkpointing to save GPU memory during backward call. Default: False
         """
         # Init the base class
         name = name if not with_registers else f"{name}_reg"
@@ -78,12 +79,15 @@ class DINOv2Encoder(UniCeptionViTEncoderBase):
 
         # Load the pretrained DINOv2 model from torch hub
         print(f"Loading pretrained {DINO_MODELS[self.with_registers][self.version]} from torch hub")
-        # try:  # Requires internet access
-        #     self.model = torch.hub.load(
-        #         "facebookresearch/dinov2", DINO_MODELS[self.with_registers][self.version], force_reload=True
-        #     )
-        # except:  # Load from cache
-        self.model = torch.hub.load("facebookresearch/dinov2", DINO_MODELS[self.with_registers][self.version])
+        try:  # Requires internet access
+            self.model = torch.hub.load(
+                "facebookresearch/dinov2",
+                DINO_MODELS[self.with_registers][self.version],
+                force_reload=torch_hub_force_reload,
+            )
+        except:  # Load from cache
+            self.model = torch.hub.load("facebookresearch/dinov2", DINO_MODELS[self.with_registers][self.version])
+
         del (
             self.model.mask_token
         )  # This parameter is unused in producing patch features, and will lead to unused parameters
@@ -95,6 +99,7 @@ class DINOv2Encoder(UniCeptionViTEncoderBase):
         if use_pytorch_sdpa:
             self.enable_pytorch_native_sdpa()
 
+        # Wrap the transformer blocks with support for gradient checkpointing if required
         if self.gradient_checkpointing:
             for i in range(len(self.model.blocks)):
                 self.model.blocks[i] = self.wrap_module_with_gradient_checkpointing(self.model.blocks[i])

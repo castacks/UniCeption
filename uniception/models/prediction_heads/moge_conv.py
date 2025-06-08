@@ -1,5 +1,7 @@
-# This file is modified from MoGe's output head implementation.
-# source: https://github.com/microsoft/MoGe/blob/main/moge/model/moge_model.py
+"""
+MoGe Conv Decoder Implementation
+References: https://github.com/microsoft/MoGe/blob/main/moge/model/v1.py
+"""
 
 from typing import List, Literal, Optional, Union
 
@@ -91,7 +93,7 @@ class MoGeConvFeature(nn.Module):
         # MoGe parameters
         num_features: int,
         input_feature_dims: Union[int, List[int]],
-        dim_out: List[int],  # TODO: adaptor dimension
+        dim_out: List[int],
         dim_proj: int = 512,
         dim_upsample: List[int] = [256, 128, 64],
         dim_times_res_block_hidden: int = 2,
@@ -223,7 +225,6 @@ class MoGeConvFeature(nn.Module):
             x = torch.cat([x, uv], dim=1)
             for layer in block:
                 x = torch.utils.checkpoint.checkpoint(layer, x, use_reentrant=False)
-                # x = layer(x)
 
         # (patch_h * 8, patch_w * 8) -> (img_h, img_w)
         x = F.interpolate(x, (img_h, img_w), mode="bilinear", align_corners=False)
@@ -235,7 +236,6 @@ class MoGeConvFeature(nn.Module):
 
         if isinstance(self.output_block, nn.ModuleList):
             output = [torch.utils.checkpoint.checkpoint(block, x, use_reentrant=False) for block in self.output_block]
-            # output = [block(x) for block in self.output_block]
         else:
             raise NotImplementedError()
 
@@ -287,7 +287,6 @@ if __name__ == "__main__":
     model_input = PredictionHeadLayeredInput(list_features=input_feats, target_output_shape=image_shape)
 
     with torch.autocast("cuda", dtype=torch.float16):
-
         # Warm-up to stabilize GPU performance
         for _ in range(3):
             output = head(model_input)
