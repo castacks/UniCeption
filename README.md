@@ -1,6 +1,7 @@
 # UniCeption
 
-A Generalizable Perception Stack for Scene Understanding.
+UniCeption houses modular building blocks for developing and training generalizable perception models for all things related to 3D, 4D, spatial AI and scene understanding.
+It is designed to be flexible and extensible, allowing researchers to easily experiment with different architectures and configurations.
 
 Please refer to the [Developer Guidelines](#developer-guidelines) for contributing to the project.
 
@@ -10,7 +11,10 @@ Clone the repository to your local machine by running the following command:
 
 ```bash
 git clone git@github.com:castacks/UniCeption.git
+cd UniCeption
 ```
+
+### Standard Installation
 
 Install the `uniception` package in development mode by running the following commands:
 
@@ -22,41 +26,99 @@ conda activate uniception
 # For Python Virtual Environment
 virtualenv uniception
 source uniception/bin/activate
-# Install PyTorch and XFormers
-pip install torch torchvision torchaudio # Torch 2.6.0+cu12.4
-pip3 install -U xformers --index-url https://download.pytorch.org/whl/cu124 # Install based on PyTorch Version
-# Install Other Dependencies
-pip install -r requirements.txt
-pre-commit install # Github pre-commit hooks for linting
-cd uniception/models/libs/croco/curope # For CroCo
-python3 setup.py build_ext --inplace
-cd ../../../../../
+
+# Install UniCeption with base dependencies (includes PyTorch)
 pip install -e .
+
+# Optional: Install with XFormers support
+pip install -e ".[xformers]"
+
+# Optional: Install with development tools
+pip install -e ".[dev]"
+
+# Optional: Install all optional dependencies
+pip install -e ".[all]"
+
+# Setup pre-commit hooks for development
+pre-commit install
 ```
 
-### Downloading UniCeption Format Checkpoints
+### Optional: CroCo RoPE Extension Installation
 
-To download the UniCeption format custom checkpoints, run the following command:
+To use CroCo models with the custom RoPE kernel:
 
 ```bash
-python3 scripts/download_checkpoints.py
+# Recommended: Use the console script
+uniception-install-croco
+
+# Alternative: Set environment variable during installation
+INSTALL_CROCO_ROPE=true pip install -e .
+
+# Manual compilation (if needed)
+cd uniception/models/libs/croco/curope
+python setup.py build_ext --inplace
+cd ../../../../../
 ```
 
-For options to download specific folders please refer to the script's help message:
+### Installation Validation and Dependency Checking
 
-```
-usage: download_checkpoints.py [-h] [--folders FOLDERS [FOLDERS ...]] [--destination DESTINATION]
+After installation, use these console scripts to validate your setup:
 
-Download UniCeption format checkpoints from AirLab Data Server
+```bash
+# Validate installation and check dependencies
+uniception-validate
 
-options:
-  -h, --help            show this help message and exit
-  --folders FOLDERS [FOLDERS ...]
-                        List of folders to download (default: all folders). Choices: encoders, info_sharing, prediction_heads, examples
-  --destination DESTINATION
-                        Destination folder for downloaded checkpoints
+# Check which optional dependencies are available
+uniception-check-deps
 ```
 
+### Advanced Installation Options
+
+#### Docker Installation (No Internet Access)
+
+If you're working in a Docker container that already has Python dependencies installed but no internet access, you can install UniCeption in development mode without triggering network requests:
+
+```bash
+# Install only the package structure without dependencies
+pip install -e . --no-deps
+```
+
+**Note:** This command assumes your Docker image already contains all required dependencies (PyTorch, etc.). Use `uniception-validate` after installation to verify all dependencies are available.
+
+#### Offline Installation
+
+For environments without internet access:
+
+```bash
+# 1. On a machine with internet access, prepare offline wheels
+uniception-prepare-offline --output-dir offline_wheels --extras all
+
+# 2. Copy the offline_wheels directory to your offline environment
+# 3. Run the offline installation
+cd offline_wheels
+INSTALL_CROCO_ROPE=true INSTALL_XFORMERS=true ./install_offline.sh
+```
+
+#### Downloading Checkpoints
+
+Download UniCeption format custom checkpoints:
+
+```bash
+# Download all available checkpoints
+uniception-download-checkpoints
+
+# Download specific folders only (e.g., encoders and prediction heads)
+uniception-download-checkpoints --folders encoders prediction_heads
+
+# Specify custom destination
+uniception-download-checkpoints --destination /path/to/checkpoints
+```
+
+**Available options:**
+- `--folders`: Specify which folders to download. Choices: `encoders`, `info_sharing`, `prediction_heads`, `examples` (default: all folders)
+- `--destination`: Custom destination folder for downloaded checkpoints (default: current directory)
+
+---
 
 ## Currently Supported Components
 
@@ -68,13 +130,19 @@ Please refer to the `uniception/models/encoders` directory for the supported enc
 python3 -m uniception.models.encoders.list
 ```
 
+---
+
 ## Information Sharing Blocks
 
 Please refer to the `uniception/models/info_sharing` directory for the supported information sharing blocks.
 
+---
+
 ## Prediction Heads
 
 Please refer to the `uniception/models/prediction_heads` directory for the supported prediction heads.
+
+---
 
 ## Developer Guidelines
 
@@ -84,4 +152,4 @@ Please follow these guidelines when contributing to UniCeption:
 - **Unit Tests**: Add necessary unit tests to the `tests` folder.
 - **Linting**: Run `black` & `isort` on your code before committing. For example, you can run `black . && isort .`.
 
-Since UniCeption is currently a private repo, please do not push to the main branch directly. Instead, create a new branch for your changes and submit a pull request for review.
+Please create a pull request for any changes you make, and ensure that all tests pass before merging.
