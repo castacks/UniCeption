@@ -13,6 +13,7 @@ from torch import Tensor
 @dataclass
 class EncoderInput:
     "Data class for Encoder Input"
+
     data_norm_type: str
     # Add other fields that are required by the specific implementation of the encoder.
 
@@ -20,6 +21,7 @@ class EncoderInput:
 @dataclass
 class EncoderOutput:
     "Data class for Encoder Output"
+
     pass
 
 
@@ -82,12 +84,14 @@ class UniCeptionEncoderBase(nn.Module):
 @dataclass
 class ViTEncoderInput(EncoderInput):
     "Data class for Vision Transformer Encoder Input"
+
     image: Float[Tensor, "batch channel height width"]
 
 
 @dataclass
 class ViTEncoderOutput(EncoderOutput):
     "Data class for Vision Transformer Encoder Output"
+
     features: Float[Tensor, "batch enc_embed_dim feat_height feat_width"]
 
 
