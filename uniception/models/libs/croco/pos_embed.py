@@ -105,7 +105,6 @@ try:
 
     RoPE2D = cuRoPE2D
 except ImportError:
-    print("Warning, cannot find cuda-compiled version of RoPE2D, using a slow pytorch version instead")
 
     class RoPE2D(torch.nn.Module):
         def __init__(self, freq=100.0, F0=1.0):

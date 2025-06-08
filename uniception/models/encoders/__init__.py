@@ -5,15 +5,20 @@ Encoder Factory for UniCeption
 import os
 
 from uniception.models.encoders.base import (
+    EncoderGlobalRepInput,
     EncoderInput,
     UniCeptionEncoderBase,
     UniCeptionViTEncoderBase,
     ViTEncoderInput,
+    ViTEncoderNonImageInput,
     ViTEncoderOutput,
 )
 from uniception.models.encoders.croco import CroCoEncoder
-from uniception.models.encoders.dinov2 import DINOv2Encoder
+from uniception.models.encoders.dense_rep_encoder import DenseRepresentationEncoder
+from uniception.models.encoders.dinov2 import DINOv2Encoder, DINOv2IntermediateFeatureReturner
+from uniception.models.encoders.global_rep_encoder import GlobalRepresentationEncoder
 from uniception.models.encoders.naradio import NARADIOEncoder
+from uniception.models.encoders.patch_embedder import PatchEmbedder
 from uniception.models.encoders.radio import RADIOEncoder
 
 # Define encoder configurations
@@ -22,9 +27,25 @@ ENCODER_CONFIGS = {
         "class": CroCoEncoder,
         "supported_models": ["CroCov2", "DUSt3R", "MASt3R"],
     },
+    "dense_rep_encoder": {
+        "class": DenseRepresentationEncoder,
+        "supported_models": ["Dense-Representation-Encoder"],
+    },
     "dinov2": {
         "class": DINOv2Encoder,
         "supported_models": ["DINOv2", "DINOv2-Registers", "DINOv2-Depth-Anythingv2"],
+    },
+    "dinov2_intermediate_feature_returner": {
+        "class": DINOv2IntermediateFeatureReturner,
+        "supported_models": ["DINOv2-Intermediate-Feature-Returner"],
+    },
+    "global_rep_encoder": {
+        "class": GlobalRepresentationEncoder,
+        "supported_models": ["Global-Representation-Encoder"],
+    },
+    "patch_embedder": {
+        "class": PatchEmbedder,
+        "supported_models": ["Patch-Embedder"],
     },
     "radio": {
         "class": RADIOEncoder,
@@ -158,6 +179,10 @@ def _make_encoder_test(encoder_str: str, **kwargs) -> UniCeptionEncoderBase:
             name=encoder_str,
             model_version=encoder_str,
             eradio_input_shape=eradio_input_shape,
+        )
+    elif "patch_embedder" in encoder_str:
+        return PatchEmbedder(
+            name=encoder_str,
         )
     else:
         raise ValueError(f"Unknown encoder: {encoder_str}")

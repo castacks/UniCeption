@@ -23,6 +23,11 @@ class PredictionHeadLayeredInput:
 
 
 @dataclass
+class PredictionHeadTokenInput:
+    last_feature: Float[Tensor, "batch_size feat_dim num_tokens"]
+
+
+@dataclass
 class PixelTaskOutput:
     """
     PixelTaskOutput have dense pixel-wise output in BCHW format,
@@ -33,6 +38,15 @@ class PixelTaskOutput:
 
 
 @dataclass
+class SummaryTaskOutput:
+    """
+    SummaryTaskOutput have a single latent output for each image in BC format.
+    """
+
+    decoded_channels: Float[Tensor, "batch_size output_channels"]
+
+
+@dataclass
 class AdaptorInput:
     adaptor_feature: Float[Tensor, "batch_size sliced_channels height width"]
     output_shape_hw: Tuple[int, int]
@@ -40,7 +54,7 @@ class AdaptorInput:
 
 @dataclass
 class AdaptorOutput:
-    pass
+    value: Float[Tensor, "batch_size sliced_channels ..."]
 
 
 @dataclass
@@ -72,6 +86,21 @@ class RegressionAdaptorOutput:
 class RegressionWithConfidenceAdaptorOutput:
     value: Float[Tensor, "batch_size sliced_channels height width"]
     confidence: Float[Tensor, "batch_size 1 height width"]
+
+
+@dataclass
+class RegressionWithMaskAdaptorOutput:
+    value: Float[Tensor, "batch_size sliced_channels height width"]
+    logits: Float[Tensor, "batch_size 1 height width"]
+    mask: Float[Tensor, "batch_size 1 height width"]
+
+
+@dataclass
+class RegressionWithConfidenceAndMaskAdaptorOutput:
+    value: Float[Tensor, "batch_size sliced_channels height width"]
+    confidence: Float[Tensor, "batch_size 1 height width"]
+    logits: Float[Tensor, "batch_size 1 height width"]
+    mask: Float[Tensor, "batch_size 1 height width"]
 
 
 class UniCeptionPredictionHeadBase(nn.Module):

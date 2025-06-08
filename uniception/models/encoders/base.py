@@ -8,6 +8,7 @@ from typing import Optional
 import torch.nn as nn
 from jaxtyping import Float
 from torch import Tensor
+from torch.utils.checkpoint import checkpoint
 
 
 @dataclass
@@ -23,6 +24,20 @@ class EncoderOutput:
     "Data class for Encoder Output"
 
     pass
+
+
+@dataclass
+class EncoderGlobalRepInput:
+    "Data class for Encoder Global Representation Input"
+
+    data: Float[Tensor, "batch channel"]
+
+
+@dataclass
+class EncoderGlobalRepOutput:
+    "Data class for Encoder Global Representation Output"
+
+    features: Float[Tensor, "batch enc_embed_dim"]
 
 
 class UniCeptionEncoderBase(nn.Module):
@@ -89,6 +104,13 @@ class ViTEncoderInput(EncoderInput):
 
 
 @dataclass
+class ViTEncoderNonImageInput:
+    "Data class for Vision (2D-Grid) Transformer Encoder Non-Image Input"
+
+    data: Float[Tensor, "batch channel height width"]
+
+
+@dataclass
 class ViTEncoderOutput(EncoderOutput):
     "Data class for Vision Transformer Encoder Output"
 
@@ -101,6 +123,7 @@ class UniCeptionViTEncoderBase(UniCeptionEncoderBase):
     def __init__(
         self,
         patch_size: int,
+        gradient_checkpointing: bool = False,
         *args,
         **kwargs,
     ):
@@ -110,6 +133,22 @@ class UniCeptionViTEncoderBase(UniCeptionEncoderBase):
         super().__init__(*args, **kwargs)
 
         self.patch_size = patch_size
+        self.gradient_checkpointing = gradient_checkpointing
+
+    def wrap_module_with_gradient_checkpointing(self, module: nn.Module):
+        """
+        Wrapper for Gradient Checkpointing
+        References: https://github.com/microsoft/MoGe
+        """
+
+        class _CheckpointingWrapper(module.__class__):
+            _restore_cls = module.__class__
+
+            def forward(self, *args, **kwargs):
+                return checkpoint(super().forward, *args, use_reentrant=False, **kwargs)
+
+        module.__class__ = _CheckpointingWrapper
+        return module
 
 
 if __name__ == "__main__":
