@@ -21,7 +21,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import reduce
-from loguru import logger as logging
 
 from uniception.models.libs.cosmos_tokenizer.modules.utils import (
     default,
@@ -408,7 +407,6 @@ class LFQuantizer(nn.Module):
         has_projections = embed_dim != codebook_dim
         self.project_in = nn.Linear(embed_dim, codebook_dim) if has_projections else nn.Identity()
         self.project_out = nn.Linear(codebook_dim, embed_dim) if has_projections else nn.Identity()
-        logging.info(f"LFQ: has_projections={has_projections}, dim_in={embed_dim}, codebook_dim={codebook_dim}")
 
         self.dtype = ignore_kwargs.get("dtype", torch.float32)
 

@@ -13,16 +13,14 @@ from uniception.models.encoders.base import (
     ViTEncoderNonImageInput,
     ViTEncoderOutput,
 )
-
 from uniception.models.encoders.cosmos import CosmosEncoder
 from uniception.models.encoders.croco import CroCoEncoder, CroCoIntermediateFeatureReturner
-from uniception.models.encoders.dinov2 import DINOv2Encoder, DINOv2IntermediateFeatureReturner
-from uniception.models.encoders.radio import RADIOEncoder, RADIOIntermediateFeatureReturner
 from uniception.models.encoders.dense_rep_encoder import DenseRepresentationEncoder
+from uniception.models.encoders.dinov2 import DINOv2Encoder, DINOv2IntermediateFeatureReturner
 from uniception.models.encoders.global_rep_encoder import GlobalRepresentationEncoder
 from uniception.models.encoders.naradio import NARADIOEncoder
 from uniception.models.encoders.patch_embedder import PatchEmbedder
-
+from uniception.models.encoders.radio import RADIOEncoder, RADIOIntermediateFeatureReturner
 
 # Define encoder configurations
 ENCODER_CONFIGS = {

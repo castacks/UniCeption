@@ -16,7 +16,6 @@
 from collections import OrderedDict, namedtuple
 
 import torch
-from loguru import logger as logging
 from torch import nn
 
 from uniception.models.libs.cosmos_tokenizer.modules import DecoderType, DiscreteQuantizer, EncoderType
@@ -52,11 +51,8 @@ class DiscreteImageTokenizer(nn.Module):
             assert "levels" in kwargs, f"`levels` must be provided for {quantizer_name}.name."
             assert "num_quantizers" in kwargs, f"`num_quantizers` must be provided for {quantizer_name}."
         self.quantizer = DiscreteQuantizer[quantizer_name].value(**kwargs)
-        logging.info(f"{self.name} based on {quantizer_name}-VAE, with {kwargs}.")
 
         num_parameters = sum(param.numel() for param in self.parameters())
-        logging.info(f"model={self.name}, num_parameters={num_parameters:,}")
-        logging.info(f"z_channels={z_channels}, embedding_dim={self.embedding_dim}.")
 
     def to(self, *args, **kwargs):
         setattr(self.quantizer, "dtype", kwargs.get("dtype", torch.bfloat16))

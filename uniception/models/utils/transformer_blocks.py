@@ -557,6 +557,7 @@ def lambda_init_fn(depth):
 
 class DiffAttention(nn.Module):
     "Differential Self-Attention Layer"
+
     fused_attn: Final[bool]
 
     def __init__(
@@ -677,6 +678,7 @@ class DiffAttention(nn.Module):
 
 class DiffCrossAttention(nn.Module):
     "Differential Cross-Attention Layer, following https://arxiv.org/abs/2410.05258"
+
     fused_attn: Final[bool]
 
     def __init__(

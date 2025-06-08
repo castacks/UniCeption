@@ -17,7 +17,6 @@
 from collections import OrderedDict, namedtuple
 
 import torch
-from loguru import logger as logging
 from torch import nn
 
 from uniception.models.libs.cosmos_tokenizer.modules import ContinuousFormulation, DecoderType, EncoderType
@@ -42,11 +41,8 @@ class ContinuousImageTokenizer(nn.Module):
 
         formulation_name = kwargs.get("formulation", ContinuousFormulation.AE.name)
         self.distribution = ContinuousFormulation[formulation_name].value()
-        logging.info(f"{self.name} based on {formulation_name} formulation, with {kwargs}.")
 
         num_parameters = sum(param.numel() for param in self.parameters())
-        logging.info(f"model={self.name}, num_parameters={num_parameters:,}")
-        logging.info(f"z_channels={z_channels}, latent_channels={self.latent_channels}.")
 
     def encoder_jit(self):
         return nn.Sequential(

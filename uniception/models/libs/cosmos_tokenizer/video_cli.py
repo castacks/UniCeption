@@ -38,7 +38,6 @@ from argparse import ArgumentParser, Namespace
 from typing import Any
 
 import numpy as np
-from loguru import logger as logging
 
 from uniception.models.libs.cosmos_tokenizer.networks import TokenizerConfigs
 from uniception.models.libs.cosmos_tokenizer.utils import (
@@ -145,10 +144,8 @@ def _parse_args() -> tuple[Namespace, dict[str, Any]]:
     return args
 
 
-logging.info("Initializes args ...")
 args = _parse_args()
 if args.mode == "torch" and args.tokenizer_type not in ["CV", "DV"]:
-    logging.error("'torch' backend requires the tokenizer_type of 'CV' or 'DV'.")
     sys.exit(1)
 
 
@@ -156,7 +153,6 @@ def _run_eval() -> None:
     """Invokes JIT-compiled CausalVideoTokenizer on an input video."""
 
     if args.checkpoint_enc is None and args.checkpoint_dec is None and args.checkpoint is None:
-        logging.warning("Aborting. Both encoder or decoder JIT required. Or provide the full autoencoder JIT model.")
         return
 
     if args.mode == "torch":
@@ -166,9 +162,6 @@ def _run_eval() -> None:
     else:
         tokenizer_config = None
 
-    logging.info(
-        f"Loading a torch.jit model `{os.path.dirname(args.checkpoint or args.checkpoint_enc or args.checkpoint_dec)}` ..."
-    )
     autoencoder = CausalVideoTokenizer(
         checkpoint=args.checkpoint,
         checkpoint_enc=args.checkpoint_enc,
@@ -178,21 +171,15 @@ def _run_eval() -> None:
         dtype=args.dtype,
     )
 
-    logging.info(f"Looking for files matching video_pattern={args.video_pattern} ...")
     filepaths = get_filepaths(args.video_pattern)
-    logging.info(f"Found {len(filepaths)} videos from {args.video_pattern}.")
 
     for filepath in filepaths:
-        logging.info(f"Reading video {filepath} ...")
         video = read_video(filepath)
         video = resize_video(video, short_size=args.short_size)
 
-        logging.info("Invoking the autoencoder model in ... ")
         batch_video = video[np.newaxis, ...]
         output_video = autoencoder(batch_video, temporal_window=args.temporal_window)[0]
-        logging.info("Constructing output filepath ...")
         output_filepath = get_output_filepath(filepath, output_dir=args.output_dir)
-        logging.info(f"Outputing {output_filepath} ...")
         write_video(output_filepath, output_video, fps=args.output_fps)
         if args.save_input:
             ext = os.path.splitext(output_filepath)[-1]
@@ -200,7 +187,6 @@ def _run_eval() -> None:
             write_video(input_filepath, video, fps=args.output_fps)
 
 
-@logging.catch(reraise=True)
 def main() -> None:
     _run_eval()
 

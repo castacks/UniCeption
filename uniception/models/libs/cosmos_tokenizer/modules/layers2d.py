@@ -30,7 +30,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from loguru import logger as logging
 
 from uniception.models.libs.cosmos_tokenizer.modules.patching import Patcher, UnPatcher
 from uniception.models.libs.cosmos_tokenizer.modules.utils import Normalize, nonlinearity
@@ -264,7 +263,6 @@ class Decoder(nn.Module):
         block_in = channels * channels_mult[self.num_resolutions - 1]
         curr_res = (resolution // patch_size) // 2 ** (self.num_resolutions - 1)
         self.z_shape = (1, z_channels, curr_res, curr_res)
-        logging.info("Working with z of shape {} = {} dimensions.".format(self.z_shape, np.prod(self.z_shape)))
 
         # z to block_in
         self.conv_in = torch.nn.Conv2d(z_channels, block_in, kernel_size=3, stride=1, padding=1)

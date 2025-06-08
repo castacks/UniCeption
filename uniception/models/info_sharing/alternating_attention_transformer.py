@@ -235,6 +235,7 @@ class MultiViewAlternatingAttentionTransformer(UniCeptionInfoSharingBase):
 
         # Process additional input tokens if provided
         if model_input.additional_input_tokens is not None:
+
             additional_tokens = model_input.additional_input_tokens
             assert additional_tokens.ndim == 3, "Additional tokens must have 3 dimensions (N, C, T)"
             assert (
@@ -262,6 +263,7 @@ class MultiViewAlternatingAttentionTransformer(UniCeptionInfoSharingBase):
 
         # Add None positions for additional tokens if they exist
         if model_input.additional_input_tokens is not None:
+
             additional_tokens_positions = [None] * model_input.additional_input_tokens.shape[1]
             multi_view_positions = multi_view_positions + additional_tokens_positions
 
@@ -294,6 +296,7 @@ class MultiViewAlternatingAttentionTransformer(UniCeptionInfoSharingBase):
         # Concatenate the reference and non-reference view features
         # Handle additional tokens (no view-based positional encoding for them)
         if model_input.additional_input_tokens is not None:
+
             additional_features = multi_view_features[:, num_of_views * num_of_tokens_per_view :, :]
             multi_view_features = torch.cat([ref_view_features, non_ref_view_features, additional_features], dim=1)
         else:
@@ -310,6 +313,7 @@ class MultiViewAlternatingAttentionTransformer(UniCeptionInfoSharingBase):
                 additional_features = None
                 additional_positions = None
                 if model_input.additional_input_tokens is not None:
+
                     # Extract additional token features
                     additional_features = multi_view_features[:, num_of_views * num_of_tokens_per_view :, :]
                     # Keep only view features for frame-level attention
@@ -365,6 +369,7 @@ class MultiViewAlternatingAttentionTransformer(UniCeptionInfoSharingBase):
 
         # Extract and return additional token features if provided
         if model_input.additional_input_tokens is not None:
+
             additional_token_features = output_multi_view_features[:, num_of_views * num_of_tokens_per_view :, :]
             additional_token_features = additional_token_features.permute(0, 2, 1).contiguous()  # (N, C, T)
             return MultiViewTransformerOutput(
@@ -531,6 +536,7 @@ class MultiViewAlternatingAttentionTransformerIFR(
 
         # Process additional input tokens if provided
         if model_input.additional_input_tokens is not None:
+
             additional_tokens = model_input.additional_input_tokens
             assert additional_tokens.ndim == 3, "Additional tokens must have 3 dimensions (N, C, T)"
             assert (
@@ -558,6 +564,7 @@ class MultiViewAlternatingAttentionTransformerIFR(
 
         # Add None positions for additional tokens if they exist
         if model_input.additional_input_tokens is not None:
+
             additional_tokens_positions = [None] * model_input.additional_input_tokens.shape[1]
             multi_view_positions = multi_view_positions + additional_tokens_positions
 
@@ -590,6 +597,7 @@ class MultiViewAlternatingAttentionTransformerIFR(
         # Concatenate the reference and non-reference view features
         # Handle additional tokens (no view-based positional encoding for them)
         if model_input.additional_input_tokens is not None:
+
             additional_features = multi_view_features[:, num_of_views * num_of_tokens_per_view :, :]
             multi_view_features = torch.cat([ref_view_features, non_ref_view_features, additional_features], dim=1)
         else:
@@ -606,6 +614,7 @@ class MultiViewAlternatingAttentionTransformerIFR(
                 additional_features = None
                 additional_positions = None
                 if model_input.additional_input_tokens is not None:
+
                     # Extract additional token features
                     additional_features = multi_view_features[:, num_of_views * num_of_tokens_per_view :, :]
                     # Keep only view features for frame-level attention
@@ -658,6 +667,7 @@ class MultiViewAlternatingAttentionTransformerIFR(
             # Extract additional token features if provided
             additional_token_features = None
             if model_input.additional_input_tokens is not None:
+
                 additional_token_features = current_features[:, num_of_views * num_of_tokens_per_view :, :]
                 additional_token_features = additional_token_features.permute(0, 2, 1).contiguous()  # (N, C, T)
                 # Only keep the view features for reshaping
@@ -689,6 +699,7 @@ class MultiViewAlternatingAttentionTransformerIFR(
         # Extract view features (excluding additional tokens)
         additional_token_features = None
         if model_input.additional_input_tokens is not None:
+
             additional_token_features = output_multi_view_features[:, num_of_views * num_of_tokens_per_view :, :]
             additional_token_features = additional_token_features.permute(0, 2, 1).contiguous()  # (N, C, T)
             view_features = output_multi_view_features[:, : num_of_views * num_of_tokens_per_view, :]

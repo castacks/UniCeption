@@ -84,7 +84,9 @@ class RADIOEncoder(UniCeptionViTEncoderBase):
 
         # delete the excess blocks if keep_first_n_layers is specified
         if keep_first_n_layers is not None:
-            assert keep_first_n_layers < len(self.model.model.blocks), "keep_first_n_layers must be less than the number of blocks"
+            assert keep_first_n_layers < len(
+                self.model.model.blocks
+            ), "keep_first_n_layers must be less than the number of blocks"
             print(f"Keeping only the first {keep_first_n_layers} layers of the model")
             self.model.model.blocks = torch.nn.ModuleList(self.model.model.blocks[:keep_first_n_layers])
 
@@ -208,7 +210,7 @@ class RADIOIntermediateFeatureReturner(RADIOEncoder, IntermediateFeatureReturner
                 version=self.model_version,
                 progress=True,
                 skip_validation=True,
-                adaptor_names='dino_v2'
+                adaptor_names="dino_v2",
             )
 
             # extract its feature converter weights
@@ -265,15 +267,15 @@ class RADIOIntermediateFeatureReturner(RADIOEncoder, IntermediateFeatureReturner
         else:
             final_features = outputs[0].features.contiguous()
             intermediate_features = outputs[1]
-        
-        # Optionally convert the features using the feature adaptor    
+
+        # Optionally convert the features using the feature adaptor
         Hp, Wp = height // self.patch_size, width // self.patch_size
 
         # convert final features
         if final_features is not None:
             if self.feature_adaptor is not None:
                 final_features = self.spatial_feature_converter(final_features)
-            
+
             # convert to BCHW and package
             final_features = final_features.view(batch_size, Hp, Wp, -1).permute(0, 3, 1, 2)
             final_features = ViTEncoderOutput(features=final_features)
@@ -285,7 +287,9 @@ class RADIOIntermediateFeatureReturner(RADIOEncoder, IntermediateFeatureReturner
             if self.feature_adaptor is not None:
                 all_intermediate_feats_tensor = self.spatial_feature_converter(all_intermediate_feats_tensor)
             # convert to BCHW
-            all_intermediate_feats_tensor = all_intermediate_feats_tensor.view(num_intermediate * batch_size, Hp, Wp, -1).permute(0, 3, 1, 2)
+            all_intermediate_feats_tensor = all_intermediate_feats_tensor.view(
+                num_intermediate * batch_size, Hp, Wp, -1
+            ).permute(0, 3, 1, 2)
             all_intermediate_feats = torch.chunk(all_intermediate_feats_tensor, num_intermediate, dim=0)
             intermediate_features = [ViTEncoderOutput(features=x) for x in all_intermediate_feats]
 
@@ -294,6 +298,7 @@ class RADIOIntermediateFeatureReturner(RADIOEncoder, IntermediateFeatureReturner
             return intermediate_features
         else:
             return final_features, intermediate_features
+
 
 if __name__ == "__main__":
     # Init different versions of the RADIO Encoder
@@ -358,4 +363,3 @@ if __name__ == "__main__":
     ), "Final features and intermediate features must be same"
 
     print("All Intermediate Feature Returner Tests have passed successfully!")
-

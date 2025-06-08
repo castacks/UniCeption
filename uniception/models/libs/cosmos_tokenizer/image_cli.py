@@ -37,7 +37,6 @@ from argparse import ArgumentParser, Namespace
 from typing import Any
 
 import numpy as np
-from loguru import logger as logging
 
 from uniception.models.libs.cosmos_tokenizer.image_lib import ImageTokenizer
 from uniception.models.libs.cosmos_tokenizer.networks import TokenizerConfigs
@@ -124,10 +123,8 @@ def _parse_args() -> tuple[Namespace, dict[str, Any]]:
     return args
 
 
-logging.info("Initializes args ...")
 args = _parse_args()
 if args.mode == "torch" and args.tokenizer_type not in ["CI", "DI"]:
-    logging.error("'torch' backend requires the tokenizer_type of 'CI' or 'DI'.")
     sys.exit(1)
 
 
@@ -135,7 +132,6 @@ def _run_eval() -> None:
     """Invokes the evaluation pipeline."""
 
     if args.checkpoint_enc is None and args.checkpoint_dec is None and args.checkpoint is None:
-        logging.warning("Aborting. Both encoder or decoder JIT required. Or provide the full autoencoder JIT model.")
         return
 
     if args.mode == "torch":
@@ -144,9 +140,6 @@ def _run_eval() -> None:
     else:
         tokenizer_config = None
 
-    logging.info(
-        f"Loading a torch.jit model `{os.path.dirname(args.checkpoint or args.checkpoint_enc or args.checkpoint_dec)}` ..."
-    )
     autoencoder = ImageTokenizer(
         checkpoint=args.checkpoint,
         checkpoint_enc=args.checkpoint_enc,
@@ -157,19 +150,15 @@ def _run_eval() -> None:
     )
 
     filepaths = get_filepaths(args.image_pattern)
-    logging.info(f"Found {len(filepaths)} images from {args.image_pattern}.")
 
     for filepath in filepaths:
-        logging.info(f"Reading image {filepath} ...")
         image = read_image(filepath)
         image = resize_image(image, short_size=args.short_size)
         batch_image = np.expand_dims(image, axis=0)
 
-        logging.info("Invoking the autoencoder model in ... ")
         output_image = autoencoder(batch_image)[0]
 
         output_filepath = get_output_filepath(filepath, output_dir=args.output_dir)
-        logging.info(f"Outputing {output_filepath} ...")
         write_image(output_filepath, output_image)
 
         if args.save_input:
@@ -178,7 +167,6 @@ def _run_eval() -> None:
             write_image(input_filepath, image)
 
 
-@logging.catch(reraise=True)
 def main() -> None:
     _run_eval()
 

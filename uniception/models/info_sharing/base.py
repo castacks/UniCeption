@@ -68,16 +68,6 @@ class UniCeptionInfoSharingBase(nn.Module):
         return module
 
 
-class IntermediateFeatureReturner:
-    def __init__(self, total_num_layers: int, selected_layers: List[int]):
-        """
-        Class to return intermediate features from the encoder.
-        """
-        self.total_num_layers: int = total_num_layers
-        self.selected_layers: List[int] = selected_layers
-        self.num_intermediate_layers: int = len(selected_layers)
-
-
 @dataclass
 class MultiViewTransformerInput(InfoSharingInput):
     """
@@ -85,19 +75,7 @@ class MultiViewTransformerInput(InfoSharingInput):
     """
 
     features: List[Float[Tensor, "batch input_embed_dim feat_height feat_width"]]
-
-
-@dataclass
-class MultiViewTransformerFeedForwardInput(MultiViewTransformerInput):
-    """
-    Input class for Multi-View Transformer. with Feed-Forward features that are to be merged
-    between blocks.
-    """
-
-    features: List[Float[Tensor, "batch input_embed_dim feat_height feat_width"]]
-
-    feedforward_features: List[List[Float[Tensor, "batch transformer_embed_dim feat_height feat_width"]]]
-    feedforward_indexes: List[int]
+    additional_input_tokens: Optional[Float[Tensor, "batch input_embed_dim num_additional_tokens"]] = None
 
 
 @dataclass
@@ -107,6 +85,27 @@ class MultiViewTransformerOutput(InfoSharingOutput):
     """
 
     features: List[Float[Tensor, "batch transformer_embed_dim feat_height feat_width"]]
+    additional_token_features: Optional[Float[Tensor, "batch transformer_embed_dim num_additional_tokens"]] = None
+
+
+@dataclass
+class MultiSetTransformerInput(InfoSharingInput):
+    """
+    Input class for Multi-Set Transformer.
+    """
+
+    features: List[Float[Tensor, "batch input_embed_dim num_tokens"]]
+    additional_input_tokens: Optional[Float[Tensor, "batch input_embed_dim num_additional_tokens"]] = None
+
+
+@dataclass
+class MultiSetTransformerOutput(InfoSharingOutput):
+    """
+    Output class for Multi-Set Transformer.
+    """
+
+    features: List[Float[Tensor, "batch transformer_embed_dim num_tokens"]]
+    additional_token_features: Optional[Float[Tensor, "batch transformer_embed_dim num_additional_tokens"]] = None
 
 
 if __name__ == "__main__":

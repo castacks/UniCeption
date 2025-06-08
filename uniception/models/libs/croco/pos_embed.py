@@ -101,11 +101,10 @@ def interpolate_pos_embed(model, checkpoint_model):
 # RoPE2D: RoPE implementation in 2D
 # ----------------------------------------------------------
 try:
-    # from uniception.models.libs.croco.curope import cuRoPE2D
-    assert False
+    from uniception.models.libs.croco.curope import cuRoPE2D
 
     RoPE2D = cuRoPE2D
-except ImportError:
+except:
 
     class RoPE2D(torch.nn.Module):
         def __init__(self, freq=100.0, F0=1.0):

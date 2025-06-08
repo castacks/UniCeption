@@ -14,7 +14,6 @@ from jaxtyping import Float
 from torch import Tensor
 
 from uniception.models.info_sharing.base import (
-    MultiViewTransformerFeedForwardInput,
     MultiSetTransformerInput,
     MultiSetTransformerOutput,
     MultiViewTransformerInput,
@@ -242,6 +241,7 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
 
         # Process additional input tokens if provided
         if model_input.additional_input_tokens is not None:
+
             additional_tokens = model_input.additional_input_tokens
             assert additional_tokens.ndim == 3, "Additional tokens must have 3 dimensions (N, C, T)"
             assert (
@@ -269,6 +269,7 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
 
         # Add None positions for additional tokens if they exist
         if model_input.additional_input_tokens is not None:
+
             additional_tokens_positions = [None] * model_input.additional_input_tokens.shape[1]
             multi_view_positions = multi_view_positions + additional_tokens_positions
 
@@ -296,6 +297,7 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
         # Concatenate the reference and non-reference view features
         # Handle additional tokens (no view-based positional encoding for them)
         if model_input.additional_input_tokens is not None:
+
             additional_features = multi_view_features[:, num_of_views * num_of_tokens_per_view :, :]
             multi_view_features = torch.cat([ref_view_features, non_ref_view_features, additional_features], dim=1)
         else:
@@ -322,6 +324,7 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
 
         # Extract and return additional token features if provided
         if model_input.additional_input_tokens is not None:
+
             additional_token_features = output_multi_view_features[:, num_of_views * num_of_tokens_per_view :, :]
             additional_token_features = additional_token_features.permute(0, 2, 1).contiguous()  # (N, C, T)
             return MultiViewTransformerOutput(
@@ -510,6 +513,7 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
 
         # Add None positions for additional tokens if they exist
         if model_input.additional_input_tokens is not None:
+
             additional_tokens_positions = [None] * model_input.additional_input_tokens.shape[1]
             multi_view_positions = multi_view_positions + additional_tokens_positions
 
@@ -537,6 +541,7 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
         # Concatenate the reference and non-reference view features
         # Handle additional tokens (no view-based positional encoding for them)
         if model_input.additional_input_tokens is not None:
+
             additional_features = multi_view_features[:, num_of_views * num_of_tokens_per_view :, :]
             multi_view_features = torch.cat([ref_view_features, non_ref_view_features, additional_features], dim=1)
         else:
@@ -560,6 +565,7 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
             # Extract additional token features if provided
             additional_token_features = None
             if model_input.additional_input_tokens is not None:
+
                 additional_token_features = current_features[:, num_of_views * num_of_tokens_per_view :, :]
                 additional_token_features = additional_token_features.permute(0, 2, 1).contiguous()  # (N, C, T)
                 # Only keep the view features for reshaping
@@ -591,6 +597,7 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
         # Extract view features (excluding additional tokens)
         additional_token_features = None
         if model_input.additional_input_tokens is not None:
+
             additional_token_features = output_multi_view_features[:, num_of_views * num_of_tokens_per_view :, :]
             additional_token_features = additional_token_features.permute(0, 2, 1).contiguous()  # (N, C, T)
             view_features = output_multi_view_features[:, : num_of_views * num_of_tokens_per_view, :]
@@ -800,6 +807,7 @@ class GlobalAttentionTransformer(UniCeptionInfoSharingBase):
 
         # Process additional input tokens if provided
         if model_input.additional_input_tokens is not None:
+
             additional_tokens = model_input.additional_input_tokens
             assert additional_tokens.ndim == 3, "Additional tokens must have 3 dimensions (N, C, T)"
             assert (
@@ -846,6 +854,7 @@ class GlobalAttentionTransformer(UniCeptionInfoSharingBase):
         # Concatenate the reference and non-reference set features
         # Handle additional tokens (no set-based positional encoding for them)
         if model_input.additional_input_tokens is not None:
+
             additional_features = multi_set_features[:, sum(num_of_tokens_per_set) :, :]
             multi_set_features = torch.cat([ref_set_features, non_ref_set_features, additional_features], dim=1)
         else:
@@ -853,6 +862,7 @@ class GlobalAttentionTransformer(UniCeptionInfoSharingBase):
 
         # Add None positions for additional tokens if they exist
         if model_input.additional_input_tokens is not None:
+
             additional_tokens_positions = [None] * model_input.additional_input_tokens.shape[2]
             multi_set_positions = multi_set_positions + additional_tokens_positions
 
@@ -867,6 +877,7 @@ class GlobalAttentionTransformer(UniCeptionInfoSharingBase):
         # Extract additional token features if provided
         additional_token_features = None
         if model_input.additional_input_tokens is not None:
+
             additional_token_features = output_multi_set_features[:, sum(num_of_tokens_per_set) :, :]
             additional_token_features = additional_token_features.permute(
                 0, 2, 1
