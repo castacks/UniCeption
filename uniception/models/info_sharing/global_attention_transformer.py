@@ -2,16 +2,12 @@
 UniCeption Global-Attention Transformer for Information Sharing
 """
 
-from copy import deepcopy
-from dataclasses import dataclass
 from functools import partial
 from typing import Callable, List, Optional, Tuple, Type, Union
 
 import numpy as np
 import torch
 import torch.nn as nn
-from jaxtyping import Float
-from torch import Tensor
 
 from uniception.models.info_sharing.base import (
     MultiSetTransformerInput,
@@ -78,6 +74,7 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
             mlp_layer (nn.Module): MLP layer (default: Mlp)
             custom_positional_encoding (Callable): Custom positional encoding function (default: None)
             pretrained_checkpoint_path (str, optional): Path to the pretrained checkpoint. (default: None)
+            gradient_checkpointing (bool, optional): Whether to use gradient checkpointing for memory efficiency. (default: False)
         """
         # Initialize the base class
         super().__init__(name=name, size=size, *args, **kwargs)
@@ -163,7 +160,7 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
             ckpt = torch.load(self.pretrained_checkpoint_path, weights_only=False)
             print(self.load_state_dict(ckpt["model"]))
 
-        # apply gradient checkpointing if enabled
+        # Apply gradient checkpointing if enabled
         if self.gradient_checkpointing:
             for i, block in enumerate(self.self_attention_blocks):
                 self.self_attention_blocks[i] = self.wrap_module_with_gradient_checkpointing(block)
@@ -241,7 +238,6 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
 
         # Process additional input tokens if provided
         if model_input.additional_input_tokens is not None:
-
             additional_tokens = model_input.additional_input_tokens
             assert additional_tokens.ndim == 3, "Additional tokens must have 3 dimensions (N, C, T)"
             assert (
@@ -269,7 +265,6 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
 
         # Add None positions for additional tokens if they exist
         if model_input.additional_input_tokens is not None:
-
             additional_tokens_positions = [None] * model_input.additional_input_tokens.shape[1]
             multi_view_positions = multi_view_positions + additional_tokens_positions
 
@@ -297,7 +292,6 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
         # Concatenate the reference and non-reference view features
         # Handle additional tokens (no view-based positional encoding for them)
         if model_input.additional_input_tokens is not None:
-
             additional_features = multi_view_features[:, num_of_views * num_of_tokens_per_view :, :]
             multi_view_features = torch.cat([ref_view_features, non_ref_view_features, additional_features], dim=1)
         else:
@@ -324,7 +318,6 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
 
         # Extract and return additional token features if provided
         if model_input.additional_input_tokens is not None:
-
             additional_token_features = output_multi_view_features[:, num_of_views * num_of_tokens_per_view :, :]
             additional_token_features = additional_token_features.permute(0, 2, 1).contiguous()  # (N, C, T)
             return MultiViewTransformerOutput(
@@ -390,12 +383,13 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
             mlp_layer (nn.Module): MLP layer (default: Mlp)
             custom_positional_encoding (Callable): Custom positional encoding function (default: None)
             pretrained_checkpoint_path (str, optional): Path to the pretrained checkpoint. (default: None)
-            indices (Optional[Union[int, List[int]]], optional): Indices of the layers to return. Defaults to None. Options:
+            indices (Optional[Union[int, List[int]]], optional): Indices of the layers to return. (default: None) Options:
             - None: Return all intermediate layers.
             - int: Return the last n layers.
             - List[int]: Return the intermediate layers at the specified indices.
-            norm_intermediate (bool, optional): Whether to normalize the intermediate features. Defaults to True.
-            intermediates_only (bool, optional): Whether to return only the intermediate features. Defaults to True.
+            norm_intermediate (bool, optional): Whether to normalize the intermediate features. (default: True)
+            intermediates_only (bool, optional): Whether to return only the intermediate features. (default: False)
+            gradient_checkpointing (bool, optional): Whether to use gradient checkpointing for memory efficiency. (default: False)
         """
         # Init the base classes
         MultiViewGlobalAttentionTransformer.__init__(
@@ -513,7 +507,6 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
 
         # Add None positions for additional tokens if they exist
         if model_input.additional_input_tokens is not None:
-
             additional_tokens_positions = [None] * model_input.additional_input_tokens.shape[1]
             multi_view_positions = multi_view_positions + additional_tokens_positions
 
@@ -541,7 +534,6 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
         # Concatenate the reference and non-reference view features
         # Handle additional tokens (no view-based positional encoding for them)
         if model_input.additional_input_tokens is not None:
-
             additional_features = multi_view_features[:, num_of_views * num_of_tokens_per_view :, :]
             multi_view_features = torch.cat([ref_view_features, non_ref_view_features, additional_features], dim=1)
         else:
@@ -565,7 +557,6 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
             # Extract additional token features if provided
             additional_token_features = None
             if model_input.additional_input_tokens is not None:
-
                 additional_token_features = current_features[:, num_of_views * num_of_tokens_per_view :, :]
                 additional_token_features = additional_token_features.permute(0, 2, 1).contiguous()  # (N, C, T)
                 # Only keep the view features for reshaping
@@ -597,7 +588,6 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
         # Extract view features (excluding additional tokens)
         additional_token_features = None
         if model_input.additional_input_tokens is not None:
-
             additional_token_features = output_multi_view_features[:, num_of_views * num_of_tokens_per_view :, :]
             additional_token_features = additional_token_features.permute(0, 2, 1).contiguous()  # (N, C, T)
             view_features = output_multi_view_features[:, : num_of_views * num_of_tokens_per_view, :]
@@ -643,6 +633,7 @@ class GlobalAttentionTransformer(UniCeptionInfoSharingBase):
         norm_layer: Union[Type[nn.Module], Callable[..., nn.Module]] = partial(nn.LayerNorm, eps=1e-6),
         mlp_layer: Type[nn.Module] = Mlp,
         pretrained_checkpoint_path: Optional[str] = None,
+        gradient_checkpointing: bool = False,
         *args,
         **kwargs,
     ):
@@ -668,6 +659,7 @@ class GlobalAttentionTransformer(UniCeptionInfoSharingBase):
             norm_layer (nn.Module): Normalization layer (default: nn.LayerNorm)
             mlp_layer (nn.Module): MLP layer (default: Mlp)
             pretrained_checkpoint_path (str, optional): Path to the pretrained checkpoint. (default: None)
+            gradient_checkpointing (bool, optional): Whether to use gradient checkpointing for memory efficiency. (default: False)
         """
         # Initialize the base class
         super().__init__(name=name, size=size, *args, **kwargs)
@@ -690,6 +682,7 @@ class GlobalAttentionTransformer(UniCeptionInfoSharingBase):
         self.norm_layer = norm_layer
         self.mlp_layer = mlp_layer
         self.pretrained_checkpoint_path = pretrained_checkpoint_path
+        self.gradient_checkpointing = gradient_checkpointing
 
         # Initialize the projection layer for input embeddings
         if self.input_embed_dim != self.dim:
@@ -735,6 +728,11 @@ class GlobalAttentionTransformer(UniCeptionInfoSharingBase):
             print(f"Loading pretrained global-attention transformer weights from {self.pretrained_checkpoint_path} ...")
             ckpt = torch.load(self.pretrained_checkpoint_path, weights_only=False)
             print(self.load_state_dict(ckpt["model"]))
+
+        # Apply gradient checkpointing if enabled
+        if self.gradient_checkpointing:
+            for i, block in enumerate(self.self_attention_blocks):
+                self.self_attention_blocks[i] = self.wrap_module_with_gradient_checkpointing(block)
 
     def _get_sinusoid_encoding_table(self, n_position, d_hid, base):
         "Sinusoid position encoding table"
@@ -807,7 +805,6 @@ class GlobalAttentionTransformer(UniCeptionInfoSharingBase):
 
         # Process additional input tokens if provided
         if model_input.additional_input_tokens is not None:
-
             additional_tokens = model_input.additional_input_tokens
             assert additional_tokens.ndim == 3, "Additional tokens must have 3 dimensions (N, C, T)"
             assert (
@@ -854,7 +851,6 @@ class GlobalAttentionTransformer(UniCeptionInfoSharingBase):
         # Concatenate the reference and non-reference set features
         # Handle additional tokens (no set-based positional encoding for them)
         if model_input.additional_input_tokens is not None:
-
             additional_features = multi_set_features[:, sum(num_of_tokens_per_set) :, :]
             multi_set_features = torch.cat([ref_set_features, non_ref_set_features, additional_features], dim=1)
         else:
@@ -862,7 +858,6 @@ class GlobalAttentionTransformer(UniCeptionInfoSharingBase):
 
         # Add None positions for additional tokens if they exist
         if model_input.additional_input_tokens is not None:
-
             additional_tokens_positions = [None] * model_input.additional_input_tokens.shape[2]
             multi_set_positions = multi_set_positions + additional_tokens_positions
 
@@ -877,7 +872,6 @@ class GlobalAttentionTransformer(UniCeptionInfoSharingBase):
         # Extract additional token features if provided
         additional_token_features = None
         if model_input.additional_input_tokens is not None:
-
             additional_token_features = output_multi_set_features[:, sum(num_of_tokens_per_set) :, :]
             additional_token_features = additional_token_features.permute(
                 0, 2, 1

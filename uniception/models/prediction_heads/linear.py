@@ -5,9 +5,6 @@ The linear head implementation is based on DUSt3R and CroCoV2
 References: https://github.com/naver/dust3r
 """
 
-from dataclasses import dataclass
-from typing import Iterable, List, Optional, Tuple, Union
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

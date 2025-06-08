@@ -3,23 +3,20 @@ UniCeption Cross-Attention Transformer for Information Sharing
 """
 
 from copy import deepcopy
-from dataclasses import dataclass
 from functools import partial
 from typing import Callable, List, Optional, Tuple, Type, Union
 
 import torch
 import torch.nn as nn
-from jaxtyping import Float
-from torch import Tensor
 
-from uniception.models.info_sharing.base import InfoSharingInput, InfoSharingOutput, UniCeptionInfoSharingBase
+from uniception.models.info_sharing.base import UniCeptionInfoSharingBase
 from uniception.models.info_sharing.cross_attention_transformer import (
     MultiViewTransformerInput,
     MultiViewTransformerOutput,
     PositionGetter,
 )
 from uniception.models.utils.intermediate_feature_return import IntermediateFeatureReturner, feature_take_indices
-from uniception.models.utils.transformer_blocks import CrossAttentionBlock, DiffCrossAttentionBlock, Mlp
+from uniception.models.utils.transformer_blocks import DiffCrossAttentionBlock, Mlp
 
 
 class DifferentialMultiViewCrossAttentionTransformer(UniCeptionInfoSharingBase):
@@ -47,6 +44,7 @@ class DifferentialMultiViewCrossAttentionTransformer(UniCeptionInfoSharingBase):
         custom_positional_encoding: Optional[Callable] = None,
         norm_cross_tokens: bool = True,
         pretrained_checkpoint_path: Optional[str] = None,
+        gradient_checkpointing: bool = False,
         *args,
         **kwargs,
     ):
@@ -73,6 +71,7 @@ class DifferentialMultiViewCrossAttentionTransformer(UniCeptionInfoSharingBase):
             custom_positional_encoding (Callable): Custom positional encoding function (default: None)
             norm_cross_tokens (bool): Whether to normalize cross tokens (default: True)
             pretrained_checkpoint_path (str, optional): Path to the pretrained checkpoint. (default: None)
+            gradient_checkpointing (bool, optional): Whether to use gradient checkpointing for memory efficiency. (default: False)
         """
         # Initialize the base class
         super().__init__(name=name, size=size, *args, **kwargs)
@@ -96,6 +95,7 @@ class DifferentialMultiViewCrossAttentionTransformer(UniCeptionInfoSharingBase):
         self.custom_positional_encoding = custom_positional_encoding
         self.norm_cross_tokens = norm_cross_tokens
         self.pretrained_checkpoint_path = pretrained_checkpoint_path
+        self.gradient_checkpointing = gradient_checkpointing
 
         # Initialize the projection layer for input embeddings
         if self.input_embed_dim != self.dim:
@@ -142,6 +142,11 @@ class DifferentialMultiViewCrossAttentionTransformer(UniCeptionInfoSharingBase):
 
         # Initialize random weights
         self.initialize_weights()
+
+        # Apply gradient checkpointing if enabled
+        if self.gradient_checkpointing:
+            for i, block in enumerate(self.cross_attention_blocks):
+                self.cross_attention_blocks[i] = self.wrap_module_with_gradient_checkpointing(block)
 
         # Load pretrained weights if provided
         if self.pretrained_checkpoint_path is not None:
@@ -284,6 +289,7 @@ class DifferentialMultiViewCrossAttentionTransformerIFR(
         indices: Optional[Union[int, List[int]]] = None,
         norm_intermediate: bool = True,
         intermediates_only: bool = False,
+        gradient_checkpointing: bool = False,
         *args,
         **kwargs,
     ):
@@ -311,12 +317,13 @@ class DifferentialMultiViewCrossAttentionTransformerIFR(
             custom_positional_encoding (Callable): Custom positional encoding function (default: None)
             norm_cross_tokens (bool): Whether to normalize cross tokens (default: True)
             pretrained_checkpoint_path (str, optional): Path to the pretrained checkpoint. (default: None)
-            indices (Optional[Union[int, List[int]]], optional): Indices of the layers to return. Defaults to None. Options:
+            indices (Optional[Union[int, List[int]]], optional): Indices of the layers to return. (default: None) Options:
             - None: Return all intermediate layers.
             - int: Return the last n layers.
             - List[int]: Return the intermediate layers at the specified indices.
-            norm_intermediate (bool, optional): Whether to normalize the intermediate features. Defaults to True.
-            intermediates_only (bool, optional): Whether to return only the intermediate features. Defaults to True.
+            norm_intermediate (bool, optional): Whether to normalize the intermediate features. (default: True)
+            intermediates_only (bool, optional): Whether to return only the intermediate features. (default: False)
+            gradient_checkpointing (bool, optional): Whether to use gradient checkpointing for memory efficiency. (default: False)
         """
         # Init the base classes
         DifferentialMultiViewCrossAttentionTransformer.__init__(
@@ -341,6 +348,7 @@ class DifferentialMultiViewCrossAttentionTransformerIFR(
             custom_positional_encoding=custom_positional_encoding,
             norm_cross_tokens=norm_cross_tokens,
             pretrained_checkpoint_path=pretrained_checkpoint_path,
+            gradient_checkpointing=gradient_checkpointing,
             *args,
             **kwargs,
         )

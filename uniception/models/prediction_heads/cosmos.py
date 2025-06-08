@@ -3,12 +3,8 @@ Cosmos Decoder head implementation
 Downstream heads assume inputs of size BCHW (B: batch, C: channels, H: height, W: width);
 """
 
-from dataclasses import dataclass
-from typing import Iterable, List, Optional, Tuple, Union
-
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from uniception.models.libs.cosmos_tokenizer.modules import DecoderType
 from uniception.models.libs.cosmos_tokenizer.networks import TokenizerConfigs

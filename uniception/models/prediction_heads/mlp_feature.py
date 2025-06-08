@@ -1,12 +1,9 @@
 """
-Linear head implementation
-Downstream heads assume inputs of size BCHW (B: batch, C: channels, H: height, W: width);
-The linear head implementation is based on DUSt3R and CroCoV2
-References: https://github.com/naver/dust3r
+Linear head with MLP implementation
+Downstream heads assume inputs of size BCHW (B: batch, C: channels, H: height, W: width)
 """
 
-from dataclasses import dataclass
-from typing import Iterable, List, Optional, Tuple, Union
+from typing import Union
 
 import torch
 import torch.nn as nn
@@ -19,7 +16,7 @@ from uniception.models.utils.transformer_blocks import Mlp
 class MLPFeature(nn.Module):
     """
     This class implements a linear mapping from the low resolution patch features
-    to pixel-wise features.
+    to pixel-wise features with an additional intermediate MLP layer.
     """
 
     def __init__(

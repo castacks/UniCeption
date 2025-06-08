@@ -42,6 +42,8 @@ class DINOv2Encoder(UniCeptionViTEncoderBase):
             pretrained_checkpoint_path (str): Path to the pretrained checkpoint if using custom trained version of DINOv2. Default: None
             torch_hub_force_reload (bool): Whether to force reload the model from torch hub. Default: False
             gradient_checkpointing (bool): Whether to use gradient checkpointing to save GPU memory during backward call. Default: False
+            keep_first_n_layers (Optional[int]): If specified, only the first n layers of the model will be kept. Default: None
+            use_pytorch_sdpa (bool): Whether to use PyTorch native SDPA for attention layers. Default: True
         """
         # Init the base class
         name = name if not with_registers else f"{name}_reg"
@@ -92,10 +94,11 @@ class DINOv2Encoder(UniCeptionViTEncoderBase):
             self.model.mask_token
         )  # This parameter is unused in producing patch features, and will lead to unused parameters
 
-        # keep only the first n layers of the model if keep_first_n_layers is specified
+        # Keep only the first n layers of the model if keep_first_n_layers is specified
         if keep_first_n_layers is not None:
             self.model.blocks = nn.ModuleList(self.model.blocks[:keep_first_n_layers])
 
+        # Use Native Torch SDPA for attention layers if specified (instead of DINOv2's XFormers)
         if use_pytorch_sdpa:
             self.enable_pytorch_native_sdpa()
 
@@ -111,15 +114,17 @@ class DINOv2Encoder(UniCeptionViTEncoderBase):
             print(self.load_state_dict(ckpt["model"]))
 
     def enable_pytorch_native_sdpa(self):
-        # this function and the following one to replace DINOv2 layers are copied from MoGe
-        # https://github.com/microsoft/MoGe
+        "Enable PyTorch native SDPA for attention layers"
         for i in range(len(self.model.blocks)):
             self.model.blocks[i].attn = self.wrap_dinov2_attention_with_sdpa(self.model.blocks[i].attn)
 
     def wrap_dinov2_attention_with_sdpa(self, module: nn.Module):
+        "Wrap DINOv2 attention module with PyTorch native SDPA"
         assert torch.__version__ >= "2.0", "SDPA requires PyTorch 2.0 or later"
 
         class _AttentionWrapper(module.__class__):
+            "SDPA Attention Wrapper Class"
+
             def forward(self, x: torch.Tensor, attn_bias=None) -> torch.Tensor:
                 B, N, C = x.shape
                 qkv = (
@@ -203,6 +208,7 @@ class DINOv2IntermediateFeatureReturner(DINOv2Encoder, IntermediateFeatureReturn
             indices (Optional[Union[int, List[int]]], optional): Indices of the layers to return. Defaults to 1. Options:
             - int: Return the last n layers.
             - List[int]: Return the intermediate layers at the specified indices.
+            keep_first_n_layers (Optional[int], optional): If specified, only the first n layers of the model will be kept. Defaults to None.
             norm_intermediate (bool, optional): Whether to normalize the intermediate features. Defaults to True.
         """
         # Init the base classes

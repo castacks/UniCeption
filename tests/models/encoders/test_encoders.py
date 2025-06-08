@@ -37,6 +37,7 @@ def encoders():
         "e-radio_v2",
         "naradio_v2.5-b",
         "naradio_v2.5-l",
+        "cosmosx8",
         "patch_embedder",
     ]
 

@@ -574,10 +574,7 @@ class DPTFeatureDoubleUpsampling(nn.Module):
 
 
 if __name__ == "__main__":
-    import time
-
     import numpy as np
-    import torch.cuda.profiler as profiler
 
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True

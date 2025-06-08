@@ -38,10 +38,6 @@ ENCODER_CONFIGS = {
         "intermediate_feature_returner_class": DINOv2IntermediateFeatureReturner,
         "supported_models": ["DINOv2", "DINOv2-Registers", "DINOv2-Depth-Anythingv2"],
     },
-    "dinov2_intermediate_feature_returner": {
-        "class": DINOv2IntermediateFeatureReturner,
-        "supported_models": ["DINOv2-Intermediate-Feature-Returner"],
-    },
     "global_rep_encoder": {
         "class": GlobalRepresentationEncoder,
         "supported_models": ["Global-Representation-Encoder"],
@@ -92,7 +88,7 @@ def encoder_factory(encoder_str: str, **kwargs) -> UniCeptionEncoderBase:
 
 def feature_returner_encoder_factory(encoder_str: str, **kwargs) -> UniCeptionEncoderBase:
     """
-    Encoder factory for UniCeption.
+    Factory for UniCeption Encoders with support for intermediate feature returning.
     Please use python3 -m uniception.models.encoders.list to see available encoders.
 
     Args:

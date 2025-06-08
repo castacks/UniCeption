@@ -7,7 +7,7 @@ from typing import List, Optional, Tuple, Union
 import torch
 
 from uniception.models.encoders.base import UniCeptionViTEncoderBase, ViTEncoderInput, ViTEncoderOutput
-from uniception.models.utils.intermediate_feature_return import FeatureWrapper, IntermediateFeatureReturner
+from uniception.models.utils.intermediate_feature_return import IntermediateFeatureReturner
 
 
 class RADIOEncoder(UniCeptionViTEncoderBase):
@@ -37,6 +37,7 @@ class RADIOEncoder(UniCeptionViTEncoderBase):
             pretrained_checkpoint_path (str): Path to the pretrained checkpoint if using custom trained version of RADIO. Default: None
             eradio_input_shape (tuple): Input shape (height, width) for E-RADIO models. Default: None
             torch_hub_force_reload (bool): Whether to force reload the model from torch hub. Default: False
+            keep_first_n_layers (Optional[int]): Number of layers to keep from the pretrained model. Default: None
         """
         # Init the base class
         super().__init__(
@@ -82,7 +83,7 @@ class RADIOEncoder(UniCeptionViTEncoderBase):
                 skip_validation=True,
             )
 
-        # delete the excess blocks if keep_first_n_layers is specified
+        # Delete the excess blocks if keep_first_n_layers is specified
         if keep_first_n_layers is not None:
             assert keep_first_n_layers < len(
                 self.model.model.blocks
@@ -172,7 +173,8 @@ class RADIOIntermediateFeatureReturner(RADIOEncoder, IntermediateFeatureReturner
             norm_intermediate (bool, optional): Whether to normalize the intermediate features. Defaults to True.
             stop_early (bool, optional): Whether to stop early. Defaults to False.
             intermediates_only (bool, optional): Whether to return only the intermediate features. Defaults to True.
-            feature_adaptor (Optional[str], optional): Feature adaptor to use. Defaults to None. may be "dino_v2"
+            feature_adaptor (Optional[str], optional): Feature adaptor to use. Defaults to None. Currently supported: "dino_v2".
+            keep_first_n_layers (Optional[int], optional): Number of layers to keep from the pretrained model. Defaults to None.
         """
         # Init the base classes
         RADIOEncoder.__init__(
@@ -195,7 +197,7 @@ class RADIOIntermediateFeatureReturner(RADIOEncoder, IntermediateFeatureReturner
             intermediates_only=intermediates_only,
         )
 
-        # convert indices to absolute indices if indices is None
+        # Convert indices to absolute indices if indices is None
         if self.indices is None:
             self.indices = list(range(len(self.model.model.blocks)))
 
@@ -203,7 +205,7 @@ class RADIOIntermediateFeatureReturner(RADIOEncoder, IntermediateFeatureReturner
         if self.feature_adaptor is None:
             pass
         elif self.feature_adaptor == "dino_v2":
-            # initialize a dummy radio encoder with the adaptor setting
+            # Initialize a dummy radio encoder with the adaptor setting
             dummy_model = torch.hub.load(
                 "NVlabs/RADIO",
                 "radio_model",
@@ -213,10 +215,10 @@ class RADIOIntermediateFeatureReturner(RADIOEncoder, IntermediateFeatureReturner
                 adaptor_names="dino_v2",
             )
 
-            # extract its feature converter weights
+            # Extract its feature converter weights
             self.spatial_feature_converter = dummy_model.adaptors["dino_v2"].feat_mlp
 
-            # update the embedding dimension because the feature have been projected
+            # Update the embedding dimension because the features have been projected
             self.enc_embed_dim = self.spatial_feature_converter.final[-1].out_features
 
             del dummy_model
@@ -263,37 +265,37 @@ class RADIOIntermediateFeatureReturner(RADIOEncoder, IntermediateFeatureReturner
         # Extract the final features and intermediate features accordingly
         final_features, intermediate_features = None, None
         if self.intermediates_only:
-            intermediate_features = outputs
+            intermediate_features = model_outputs
         else:
-            final_features = outputs[0].features.contiguous()
-            intermediate_features = outputs[1]
+            final_features = model_outputs[0].features.contiguous()
+            intermediate_features = model_outputs[1]
 
         # Optionally convert the features using the feature adaptor
         Hp, Wp = height // self.patch_size, width // self.patch_size
 
-        # convert final features
+        # Convert final features
         if final_features is not None:
             if self.feature_adaptor is not None:
                 final_features = self.spatial_feature_converter(final_features)
 
-            # convert to BCHW and package
+            # Convert to BCHW and package
             final_features = final_features.view(batch_size, Hp, Wp, -1).permute(0, 3, 1, 2)
             final_features = ViTEncoderOutput(features=final_features)
 
-        # convert intermediate features
+        # Convert intermediate features
         if intermediate_features is not None:
             num_intermediate = len(intermediate_features)
             all_intermediate_feats_tensor = torch.cat(intermediate_features, dim=0)
             if self.feature_adaptor is not None:
                 all_intermediate_feats_tensor = self.spatial_feature_converter(all_intermediate_feats_tensor)
-            # convert to BCHW
+            # Convert to BCHW
             all_intermediate_feats_tensor = all_intermediate_feats_tensor.view(
                 num_intermediate * batch_size, Hp, Wp, -1
             ).permute(0, 3, 1, 2)
             all_intermediate_feats = torch.chunk(all_intermediate_feats_tensor, num_intermediate, dim=0)
             intermediate_features = [ViTEncoderOutput(features=x) for x in all_intermediate_feats]
 
-        # return the final features and intermediate features accordingly
+        # Return the final features and intermediate features accordingly
         if self.intermediates_only:
             return intermediate_features
         else:
