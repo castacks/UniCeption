@@ -18,7 +18,6 @@ from uniception.models.encoders.croco import CroCoEncoder, CroCoIntermediateFeat
 from uniception.models.encoders.dense_rep_encoder import DenseRepresentationEncoder
 from uniception.models.encoders.dinov2 import DINOv2Encoder, DINOv2IntermediateFeatureReturner
 from uniception.models.encoders.global_rep_encoder import GlobalRepresentationEncoder
-from uniception.models.encoders.naradio import NARADIOEncoder
 from uniception.models.encoders.patch_embedder import PatchEmbedder
 from uniception.models.encoders.radio import RADIOEncoder, RADIOIntermediateFeatureReturner
 
@@ -54,10 +53,6 @@ ENCODER_CONFIGS = {
     "cosmos": {
         "class": CosmosEncoder,
         "supported_models": ["Cosmos-Tokenizer CI8x8", "Cosmos-Tokenizer CI16x16"],
-    },
-    "naradio": {
-        "class": NARADIOEncoder,
-        "supported_models": ["RADIO"],
     },
     # Add other encoders here
 }
@@ -191,11 +186,6 @@ def _make_encoder_test(encoder_str: str, **kwargs) -> UniCeptionEncoderBase:
             size=size,
             with_registers=with_registers,
             pretrained_checkpoint_path=pretrained_checkpoint_path,
-        )
-    elif "naradio" in encoder_str:
-        return NARADIOEncoder(
-            name=encoder_str,
-            model_version=encoder_str.replace("na", ""),
         )
     elif "radio" in encoder_str:
         if "e-radio" in encoder_str:
