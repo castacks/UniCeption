@@ -144,7 +144,22 @@ Please refer to the `uniception/models/prediction_heads` directory for the suppo
 
 ---
 
-## Developer Guidelines
+## Codebases built on top of UniCeption
+
+Check out our following codebases which build on top of UniCeption:
+- [UFM: A Simple Path towards Unified Dense Correspondence with Flow](https://uniflowmatch.github.io/)
+
+## License
+
+The code in this repository is licensed under a [BSD 3-Clause License](LICENSE).
+
+## Acknowledgements
+
+We thank the following projects for their open-source code: [DUSt3R](https://github.com/naver/dust3r), [MASt3R](https://github.com/naver/mast3r), [MoGe](https://github.com/microsoft/moge), [HF PyTorch Image Models](https://github.com/huggingface/pytorch-image-models), and all the other pre-trained image encoders featured in this repo.
+
+## Contributing & Developer Guidelines
+
+If you find our work useful, please consider giving it a star ⭐. We welcome contributions to UniCeption! Whether it's fixing bugs, adding new features, or improving documentation, your help is appreciated.
 
 Please follow these guidelines when contributing to UniCeption:
 - **Code Style**: Follow the [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html) for code style.
@@ -152,4 +167,10 @@ Please follow these guidelines when contributing to UniCeption:
 - **Unit Tests**: Add necessary unit tests to the `tests` folder.
 - **Linting**: Run `black` & `isort` on your code before committing. For example, you can run `black . && isort .`.
 
-Please create a pull request for any changes you make, and ensure that all tests pass before merging.
+Please create a pull request for any changes you make, and ensure that all tests pass before merging. We also encourage you to open issues for discussion before starting on larger features or changes. Also please feel free to add further unit tests to the `tests` folder to ensure the correctness of your changes.
+
+## Maintainers
+
+UniCeption is maintained by the [AirLab](https://theairlab.org/). In particular, feel free to reach out to the following maintainers for any questions or issues (Github issues are preferred):
+- [Nikhil Keetha](https://nik-v9.github.io/)
+- [Yuchen Zhang](https://infinity1096.github.io/)

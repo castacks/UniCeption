@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Script to prepare dependencies for offline installation.
 

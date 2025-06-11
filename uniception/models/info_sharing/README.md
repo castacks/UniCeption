@@ -4,6 +4,9 @@
 
 ### UniCeptionInfoSharingBase:
 
+- `DifferentialMultiViewCrossAttentionTransformer`
+   - `DifferentialMultiViewCrossAttentionTransformerIFR`
+- `GlobalAttentionTransformer`
 - `MultiViewCrossAttentionTransformer`
    - `MultiViewCrossAttentionTransformerIFR`
 - `MultiViewGlobalAttentionTransformer`

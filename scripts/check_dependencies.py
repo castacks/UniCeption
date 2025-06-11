@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Console script to check UniCeption dependencies.
 """

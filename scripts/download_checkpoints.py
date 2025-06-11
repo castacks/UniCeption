@@ -1,4 +1,6 @@
-"Download the UniCeption format checkpoints from the AirLab Data Server"
+"""
+Download the UniCeption format checkpoints from the AirLab Data Server
+"""
 
 import argparse
 import os

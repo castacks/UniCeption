@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Validation script for UniCeption installation.
 

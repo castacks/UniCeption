@@ -1,3 +1,7 @@
+"""
+Info Sharing Factory for UniCeption
+"""
+
 from uniception.models.info_sharing.alternating_attention_transformer import (
     MultiViewAlternatingAttentionTransformer,
     MultiViewAlternatingAttentionTransformerIFR,
