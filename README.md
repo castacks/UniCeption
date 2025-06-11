@@ -151,7 +151,7 @@ Check out our following codebases which build on top of UniCeption:
 
 ## License
 
-The code in this repository is licensed under a [BSD 3-Clause License](LICENSE).
+The code in this repository is licensed under a fully open-source [BSD 3-Clause License](LICENSE).
 
 ## Acknowledgements
 
