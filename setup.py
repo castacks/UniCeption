@@ -148,7 +148,7 @@ setup(
     name="uniception",
     version="0.1.0",
     description="Generalizable Perception Stack for 3D, 4D, spatial AI and scene understanding",
-    long_description=open("README.md").read(),
+    long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
     author="AirLab",
     license="BSD Clause-3",
