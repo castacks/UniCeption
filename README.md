@@ -80,7 +80,10 @@ If you're working in a Docker container that already has Python dependencies ins
 
 ```bash
 # Install only the package structure without dependencies
-pip install -e . --no-deps
+pip install --no-deps -e ".[all]"
+
+# Or use the following if the above command still hangs or triggers network requests
+pip install --no-index --no-use-pep517 -e ".[all]"
 ```
 
 **Note:** This command assumes your Docker image already contains all required dependencies (PyTorch, etc.). Use `uniception-validate` after installation to verify all dependencies are available.
