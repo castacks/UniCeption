@@ -55,7 +55,7 @@ class MultiViewAlternatingAttentionTransformer(UniCeptionInfoSharingBase):
 
         Args:
             input_embed_dim (int): Dimension of input embeddings.
-            use_pe_for_non_reference_views (bool): Whether to use view positional encoding for input non-referenec views. (default: False)
+            use_pe_for_non_reference_views (bool): Whether to use view positional encoding for input non-reference views. (default: False)
             max_num_views_for_pe (int): Maximum number of views for positional encoding. (default: 1000)
             use_rand_idx_pe_for_non_reference_views (bool): Whether to use random index positional encoding for non-reference views. (default: True)
             size (str): String to indicate interpretable size of the transformer (for e.g., base, large, ...). (default: None)
@@ -424,10 +424,9 @@ class MultiViewAlternatingAttentionTransformerIFR(
 
         Args:
             input_embed_dim (int): Dimension of input embeddings.
-            use_pe_for_non_reference_views (bool): Whether to use view positional encoding for input non-referenec views. (default: False)
+            use_pe_for_non_reference_views (bool): Whether to use view positional encoding for input non-reference views. (default: False)
             max_num_views_for_pe (int): Maximum number of views for positional encoding. (default: 1000)
             use_rand_idx_pe_for_non_reference_views (bool): Whether to use random index positional encoding for non-reference views. (default: True)
-            use_rand_idx_pe_for_non_reference_views (bool): Whether to use random index positional encoding for non-reference views.
             size (str): String to indicate interpretable size of the transformer (for e.g., base, large, ...). (default: None)
             depth (int): Number of transformer layers. (default: 12, base size)
             dim (int): Dimension of the transformer. (default: 768, base size)
