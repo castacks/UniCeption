@@ -104,6 +104,7 @@ class Attention(nn.Module):
         proj_drop: float = 0.0,
         norm_layer: nn.Module = nn.LayerNorm,
         custom_positional_encoding: Callable = None,
+        use_scalable_softmax: bool = False,
     ):
         """
         Initialize the Attention layer.
@@ -118,6 +119,7 @@ class Attention(nn.Module):
             proj_drop (float): Dropout rate for output (default: 0.)
             norm_layer (nn.Module): Normalization layer (default: nn.LayerNorm)
             custom_positional_encoding (Callable): Custom positional encoding function (default: None)
+            use_scalable_softmax (bool): Whether to use scalable softmax (default: False)
         """
         super().__init__()
 
@@ -146,6 +148,7 @@ class Attention(nn.Module):
         self.proj_drop = nn.Dropout(proj_drop)
 
         self.custom_positional_encoding = custom_positional_encoding
+        self.use_scalable_softmax = use_scalable_softmax
 
     def forward(self, x: torch.Tensor, xpos: torch.Tensor = None) -> torch.Tensor:
         """
@@ -169,6 +172,10 @@ class Attention(nn.Module):
             ), "Positions of tokens (xpos) are a required input when using custom positional encoding"
             q = self.custom_positional_encoding(q, xpos)
             k = self.custom_positional_encoding(k, xpos)
+
+        if self.use_scalable_softmax:
+            # Scales the exponential base using the number of tokens (https://arxiv.org/pdf/2501.19399)
+            q = q * torch.log(torch.tensor(N, device=q.device))
 
         if self.fused_attn:
             x = F.scaled_dot_product_attention(
@@ -202,6 +209,7 @@ class CrossAttention(nn.Module):
         proj_drop: float = 0.0,
         norm_layer: nn.Module = nn.LayerNorm,
         custom_positional_encoding: Callable = None,
+        use_scalable_softmax: bool = False,
     ):
         """
         Initialize the Cross-Attention layer.
@@ -215,6 +223,7 @@ class CrossAttention(nn.Module):
             proj_drop (float): Dropout rate for output (default: 0.)
             norm_layer (nn.Module): Normalization layer (default: nn.LayerNorm)
             custom_positional_encoding (Callable): Custom positional encoding function (default: None)
+            use_scalable_softmax (bool): Whether to use scalable softmax (default: False)
         """
         super().__init__()
         assert dim % num_heads == 0, "dim should be divisible by num_heads"
@@ -233,6 +242,7 @@ class CrossAttention(nn.Module):
         self.proj_drop = nn.Dropout(proj_drop)
 
         self.custom_positional_encoding = custom_positional_encoding
+        self.use_scalable_softmax = use_scalable_softmax
 
     def forward(
         self,
@@ -273,6 +283,10 @@ class CrossAttention(nn.Module):
             ), "Positions of keys (kpos) are a required input when using custom positional encoding"
             q = self.custom_positional_encoding(q, qpos)
             k = self.custom_positional_encoding(k, kpos)
+
+        if self.use_scalable_softmax:
+            # Scales the exponential base using the number of tokens (https://arxiv.org/pdf/2501.19399)
+            q = q * torch.log(torch.tensor(Nq, device=q.device))
 
         if self.fused_attn:
             x = F.scaled_dot_product_attention(
@@ -336,6 +350,7 @@ class SelfAttentionBlock(nn.Module):
         norm_layer: nn.Module = nn.LayerNorm,
         mlp_layer: nn.Module = Mlp,
         custom_positional_encoding: Callable = None,
+        use_scalable_softmax: bool = False,
     ):
         """
         Initialize the Self-Attention Block.
@@ -354,6 +369,7 @@ class SelfAttentionBlock(nn.Module):
             norm_layer (nn.Module): Normalization layer (default: nn.LayerNorm)
             mlp_layer (nn.Module): MLP layer (default: Mlp)
             custom_positional_encoding (Callable): Custom positional encoding function (default: None)
+            use_scalable_softmax (bool): Whether to use scalable softmax (default: False)
         """
         super().__init__()
         self.norm1 = norm_layer(dim)
@@ -367,6 +383,7 @@ class SelfAttentionBlock(nn.Module):
             proj_drop=proj_drop,
             norm_layer=norm_layer,
             custom_positional_encoding=custom_positional_encoding,
+            use_scalable_softmax=use_scalable_softmax,
         )
         self.ls1 = LayerScale(dim, init_values=init_values) if init_values else nn.Identity()
         self.drop_path1 = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
@@ -422,6 +439,7 @@ class CrossAttentionBlock(nn.Module):
         mlp_layer: nn.Module = Mlp,
         custom_positional_encoding: Callable = None,
         norm_cross_tokens: bool = True,
+        use_scalable_softmax: bool = False,
     ):
         """
         Initialize the Cross-Attention Block.
@@ -441,6 +459,7 @@ class CrossAttentionBlock(nn.Module):
             mlp_layer (nn.Module): MLP layer (default: Mlp)
             custom_positional_encoding (Callable): Custom positional encoding function (default: None)
             norm_cross_tokens (bool): Whether to normalize cross tokens (default: True)
+            use_scalable_softmax (bool): Whether to use scalable softmax (default: False)
 
         Returns:
             torch.Tensor: Output features of same shape as input
@@ -456,6 +475,7 @@ class CrossAttentionBlock(nn.Module):
             proj_drop=proj_drop,
             norm_layer=norm_layer,
             custom_positional_encoding=custom_positional_encoding,
+            use_scalable_softmax=use_scalable_softmax,
         )
         self.ls1 = LayerScale(dim, init_values=init_values) if init_values else nn.Identity()
         self.drop_path1 = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
@@ -472,6 +492,7 @@ class CrossAttentionBlock(nn.Module):
             proj_drop=proj_drop,
             norm_layer=norm_layer,
             custom_positional_encoding=custom_positional_encoding,
+            use_scalable_softmax=use_scalable_softmax,
         )
         self.ls2 = LayerScale(dim, init_values=init_values) if init_values else nn.Identity()
         self.drop_path2 = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
@@ -960,5 +981,17 @@ if __name__ == "__main__":
     # Perform dummy inference with the DiffAttention blocks
     diff_self_attn_block_output = diff_self_attn_block(dummy_input, dummy_xpos)
     diff_cross_attn_block_output = diff_cross_attn_block(dummy_input, dummy_input, dummy_xpos, dummy_xpos)
-
     print("Init of DiffSelfAttentionBlock & DiffCrossAttentionBlock is successful!")
+
+    # Init SelfAttentionBlock & CrossAttentionBlock with scalable softmax
+    self_attn_block = SelfAttentionBlock(
+        dim=768, num_heads=16, custom_positional_encoding=dummy_positional_encoding, use_scalable_softmax=True
+    )
+    cross_attn_block = CrossAttentionBlock(
+        dim=768, num_heads=16, custom_positional_encoding=dummy_positional_encoding, use_scalable_softmax=True
+    )
+
+    # Perform dummy inference with the Attention blocks
+    self_attn_block_output = self_attn_block(dummy_input, dummy_xpos)
+    cross_attn_block_output = cross_attn_block(dummy_input, dummy_input, dummy_xpos, dummy_xpos)
+    print("Init of SelfAttentionBlock & CrossAttentionBlock with scalable softmax is successful!")
