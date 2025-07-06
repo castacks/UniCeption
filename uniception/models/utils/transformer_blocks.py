@@ -104,6 +104,10 @@ class Attention(nn.Module):
         proj_drop: float = 0.0,
         norm_layer: nn.Module = nn.LayerNorm,
         custom_positional_encoding: Callable = None,
+        use_scalable_softmax: bool = False,
+        use_entropy_scaling: bool = False,
+        base_token_count_for_entropy_scaling: int = 444,
+        entropy_scaling_growth_factor: float = 1.4,
     ):
         """
         Initialize the Attention layer.
@@ -118,6 +122,11 @@ class Attention(nn.Module):
             proj_drop (float): Dropout rate for output (default: 0.)
             norm_layer (nn.Module): Normalization layer (default: nn.LayerNorm)
             custom_positional_encoding (Callable): Custom positional encoding function (default: None)
+            use_scalable_softmax (bool): Whether to use scalable softmax (default: False)
+            use_entropy_scaling (bool): Whether to use entropy scaling (default: False)
+            base_token_count_for_entropy_scaling (int): Base token count for entropy scaling (default: 444)
+                                                        Computed using (518, 168) as base resolution with 14 patch size
+            entropy_scaling_growth_factor (float): Growth factor for entropy scaling (default: 1.4)
         """
         super().__init__()
 
@@ -146,6 +155,10 @@ class Attention(nn.Module):
         self.proj_drop = nn.Dropout(proj_drop)
 
         self.custom_positional_encoding = custom_positional_encoding
+        self.use_scalable_softmax = use_scalable_softmax
+        self.use_entropy_scaling = use_entropy_scaling
+        self.base_token_count_for_entropy_scaling = base_token_count_for_entropy_scaling
+        self.entropy_scaling_growth_factor = entropy_scaling_growth_factor
 
     def forward(self, x: torch.Tensor, xpos: torch.Tensor = None) -> torch.Tensor:
         """
@@ -169,6 +182,18 @@ class Attention(nn.Module):
             ), "Positions of tokens (xpos) are a required input when using custom positional encoding"
             q = self.custom_positional_encoding(q, xpos)
             k = self.custom_positional_encoding(k, xpos)
+
+        if self.use_scalable_softmax:
+            # Scales the exponential base using the number of tokens (https://arxiv.org/pdf/2501.19399)
+            q = q * torch.log(torch.tensor(N, device=q.device))
+
+        if self.use_entropy_scaling:
+            # Scales the exponential base using the number of tokens (https://arxiv.org/pdf/2502.07785#page=7.35)
+            scaling_factor = torch.sqrt(
+                (self.entropy_scaling_growth_factor * torch.log(torch.tensor(N, device=q.device)))
+                / torch.log(torch.tensor(self.base_token_count_for_entropy_scaling, device=q.device))
+            )
+            q = q * scaling_factor
 
         if self.fused_attn:
             x = F.scaled_dot_product_attention(
@@ -202,6 +227,10 @@ class CrossAttention(nn.Module):
         proj_drop: float = 0.0,
         norm_layer: nn.Module = nn.LayerNorm,
         custom_positional_encoding: Callable = None,
+        use_scalable_softmax: bool = False,
+        use_entropy_scaling: bool = False,
+        base_token_count_for_entropy_scaling: int = 444,
+        entropy_scaling_growth_factor: float = 1.4,
     ):
         """
         Initialize the Cross-Attention layer.
@@ -215,6 +244,11 @@ class CrossAttention(nn.Module):
             proj_drop (float): Dropout rate for output (default: 0.)
             norm_layer (nn.Module): Normalization layer (default: nn.LayerNorm)
             custom_positional_encoding (Callable): Custom positional encoding function (default: None)
+            use_scalable_softmax (bool): Whether to use scalable softmax (default: False)
+            use_entropy_scaling (bool): Whether to use entropy scaling (default: False)
+            base_token_count_for_entropy_scaling (int): Base token count for entropy scaling (default: 444)
+                                                        Computed using (518, 168) as base resolution with 14 patch size
+            entropy_scaling_growth_factor (float): Growth factor for entropy scaling (default: 1.4)
         """
         super().__init__()
         assert dim % num_heads == 0, "dim should be divisible by num_heads"
@@ -233,6 +267,10 @@ class CrossAttention(nn.Module):
         self.proj_drop = nn.Dropout(proj_drop)
 
         self.custom_positional_encoding = custom_positional_encoding
+        self.use_scalable_softmax = use_scalable_softmax
+        self.use_entropy_scaling = use_entropy_scaling
+        self.base_token_count_for_entropy_scaling = base_token_count_for_entropy_scaling
+        self.entropy_scaling_growth_factor = entropy_scaling_growth_factor
 
     def forward(
         self,
@@ -273,6 +311,18 @@ class CrossAttention(nn.Module):
             ), "Positions of keys (kpos) are a required input when using custom positional encoding"
             q = self.custom_positional_encoding(q, qpos)
             k = self.custom_positional_encoding(k, kpos)
+
+        if self.use_scalable_softmax:
+            # Scales the exponential base using the number of tokens (https://arxiv.org/pdf/2501.19399)
+            q = q * torch.log(torch.tensor(Nq, device=q.device))
+
+        if self.use_entropy_scaling:
+            # Scales the exponential base using the number of tokens (https://arxiv.org/pdf/2502.07785#page=7.35)
+            scaling_factor = torch.sqrt(
+                (self.entropy_scaling_growth_factor * torch.log(torch.tensor(Nq, device=q.device)))
+                / torch.log(torch.tensor(self.base_token_count_for_entropy_scaling, device=q.device))
+            )
+            q = q * scaling_factor
 
         if self.fused_attn:
             x = F.scaled_dot_product_attention(
@@ -336,6 +386,10 @@ class SelfAttentionBlock(nn.Module):
         norm_layer: nn.Module = nn.LayerNorm,
         mlp_layer: nn.Module = Mlp,
         custom_positional_encoding: Callable = None,
+        use_scalable_softmax: bool = False,
+        use_entropy_scaling: bool = False,
+        base_token_count_for_entropy_scaling: int = 444,
+        entropy_scaling_growth_factor: float = 1.4,
     ):
         """
         Initialize the Self-Attention Block.
@@ -354,6 +408,14 @@ class SelfAttentionBlock(nn.Module):
             norm_layer (nn.Module): Normalization layer (default: nn.LayerNorm)
             mlp_layer (nn.Module): MLP layer (default: Mlp)
             custom_positional_encoding (Callable): Custom positional encoding function (default: None)
+            use_scalable_softmax (bool): Whether to use scalable softmax (default: False)
+            use_entropy_scaling (bool): Whether to use entropy scaling (default: False)
+            base_token_count_for_entropy_scaling (int): Base token count for entropy scaling (default: 444)
+                                                        Computed using (518, 168) as base resolution with 14 patch size
+            entropy_scaling_growth_factor (float): Growth factor for entropy scaling (default: 1.4)
+
+        Returns:
+            torch.Tensor: Output features of same shape as input
         """
         super().__init__()
         self.norm1 = norm_layer(dim)
@@ -367,6 +429,10 @@ class SelfAttentionBlock(nn.Module):
             proj_drop=proj_drop,
             norm_layer=norm_layer,
             custom_positional_encoding=custom_positional_encoding,
+            use_scalable_softmax=use_scalable_softmax,
+            use_entropy_scaling=use_entropy_scaling,
+            base_token_count_for_entropy_scaling=base_token_count_for_entropy_scaling,
+            entropy_scaling_growth_factor=entropy_scaling_growth_factor,
         )
         self.ls1 = LayerScale(dim, init_values=init_values) if init_values else nn.Identity()
         self.drop_path1 = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
@@ -422,6 +488,10 @@ class CrossAttentionBlock(nn.Module):
         mlp_layer: nn.Module = Mlp,
         custom_positional_encoding: Callable = None,
         norm_cross_tokens: bool = True,
+        use_scalable_softmax: bool = False,
+        use_entropy_scaling: bool = False,
+        base_token_count_for_entropy_scaling: int = 444,
+        entropy_scaling_growth_factor: float = 1.4,
     ):
         """
         Initialize the Cross-Attention Block.
@@ -441,6 +511,11 @@ class CrossAttentionBlock(nn.Module):
             mlp_layer (nn.Module): MLP layer (default: Mlp)
             custom_positional_encoding (Callable): Custom positional encoding function (default: None)
             norm_cross_tokens (bool): Whether to normalize cross tokens (default: True)
+            use_scalable_softmax (bool): Whether to use scalable softmax (default: False)
+            use_entropy_scaling (bool): Whether to use entropy scaling (default: False)
+            base_token_count_for_entropy_scaling (int): Base token count for entropy scaling (default: 444)
+                                                        Computed using (518, 168) as base resolution with 14 patch size
+            entropy_scaling_growth_factor (float): Growth factor for entropy scaling (default: 1.4)
 
         Returns:
             torch.Tensor: Output features of same shape as input
@@ -456,6 +531,10 @@ class CrossAttentionBlock(nn.Module):
             proj_drop=proj_drop,
             norm_layer=norm_layer,
             custom_positional_encoding=custom_positional_encoding,
+            use_scalable_softmax=use_scalable_softmax,
+            use_entropy_scaling=use_entropy_scaling,
+            base_token_count_for_entropy_scaling=base_token_count_for_entropy_scaling,
+            entropy_scaling_growth_factor=entropy_scaling_growth_factor,
         )
         self.ls1 = LayerScale(dim, init_values=init_values) if init_values else nn.Identity()
         self.drop_path1 = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
@@ -472,6 +551,10 @@ class CrossAttentionBlock(nn.Module):
             proj_drop=proj_drop,
             norm_layer=norm_layer,
             custom_positional_encoding=custom_positional_encoding,
+            use_scalable_softmax=use_scalable_softmax,
+            use_entropy_scaling=use_entropy_scaling,
+            base_token_count_for_entropy_scaling=base_token_count_for_entropy_scaling,
+            entropy_scaling_growth_factor=entropy_scaling_growth_factor,
         )
         self.ls2 = LayerScale(dim, init_values=init_values) if init_values else nn.Identity()
         self.drop_path2 = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
@@ -960,5 +1043,30 @@ if __name__ == "__main__":
     # Perform dummy inference with the DiffAttention blocks
     diff_self_attn_block_output = diff_self_attn_block(dummy_input, dummy_xpos)
     diff_cross_attn_block_output = diff_cross_attn_block(dummy_input, dummy_input, dummy_xpos, dummy_xpos)
-
     print("Init of DiffSelfAttentionBlock & DiffCrossAttentionBlock is successful!")
+
+    # Init SelfAttentionBlock & CrossAttentionBlock with scalable softmax
+    self_attn_block = SelfAttentionBlock(
+        dim=768, num_heads=16, custom_positional_encoding=dummy_positional_encoding, use_scalable_softmax=True
+    )
+    cross_attn_block = CrossAttentionBlock(
+        dim=768, num_heads=16, custom_positional_encoding=dummy_positional_encoding, use_scalable_softmax=True
+    )
+
+    # Perform dummy inference with the Attention blocks
+    self_attn_block_output = self_attn_block(dummy_input, dummy_xpos)
+    cross_attn_block_output = cross_attn_block(dummy_input, dummy_input, dummy_xpos, dummy_xpos)
+    print("Init of SelfAttentionBlock & CrossAttentionBlock with scalable softmax is successful!")
+
+    # Init SelfAttentionBlock & CrossAttentionBlock with entropy scaling
+    self_attn_block = SelfAttentionBlock(
+        dim=768, num_heads=16, custom_positional_encoding=dummy_positional_encoding, use_entropy_scaling=True
+    )
+    cross_attn_block = CrossAttentionBlock(
+        dim=768, num_heads=16, custom_positional_encoding=dummy_positional_encoding, use_entropy_scaling=True
+    )
+
+    # Perform dummy inference with the Attention blocks
+    self_attn_block_output = self_attn_block(dummy_input, dummy_xpos)
+    cross_attn_block_output = cross_attn_block(dummy_input, dummy_input, dummy_xpos, dummy_xpos)
+    print("Init of SelfAttentionBlock & CrossAttentionBlock with entropy scaling is successful!")
