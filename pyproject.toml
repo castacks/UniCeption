@@ -1,3 +1,65 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["uniception", "scripts"]
+
+[project]
+name = "uniception"
+version = "0.1.1"
+description = "Generalizable Perception Stack for 3D, 4D, spatial AI and scene understanding"
+readme = "README.md"
+authors = [
+    {name = "AirLab", email = "airlab-dev@lists.andrew.cmu.edu"}
+]
+license = {text = "BSD 3-Clause"}
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+keywords = ["computer-vision", "3d-vision", "spatial-ai", "perception", "deep-learning", "pytorch"]
+dependencies = [
+    "numpy",
+    "torch",
+    "torchvision",
+    "torchaudio",
+    "jaxtyping",
+    "matplotlib",
+    "Pillow",
+    "scikit-learn",
+    "einops",
+    "rerun-sdk",
+    "minio",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/castacks/UniCeption"
+"Bug Tracker" = "https://github.com/castacks/UniCeption/issues"
+"Documentation" = "https://github.com/castacks/UniCeption/blob/main/README.md"
+
+[project.optional-dependencies]
+xformers = ["xformers"]
+dev = [
+    "black",
+    "isort",
+    "pre-commit",
+    "pytest",
+]
+all = ["xformers", "black", "isort", "pre-commit", "pytest"]
+
+[project.scripts]
+uniception-download-checkpoints = "scripts.download_checkpoints:main"
+uniception-validate = "scripts.validate_installation:main"
+uniception-prepare-offline = "scripts.prepare_offline_install:main"
+uniception-check-deps = "scripts.check_dependencies:main"
+uniception-install-croco = "scripts.install_croco_rope:main"
+
 [tool.black]
 line-length = 120
 include = '\.pyi?$'
