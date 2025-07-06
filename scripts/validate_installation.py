@@ -80,8 +80,10 @@ def check_cuda_support():
                 print(f"    Device {i}: {torch.cuda.get_device_name(i)}")
         else:
             print(f"\n⚠ CUDA is not available (CPU-only mode)")
+        return True
     except ImportError:
         print(f"\n⚠ PyTorch not installed - cannot check CUDA support")
+        return False
 
 
 def check_croco_rope():
@@ -144,7 +146,6 @@ def check_file_structure():
         "uniception/models/info_sharing",
         "uniception/models/prediction_heads",
         "scripts",
-        "tests",
     ]
 
     missing_dirs = []
