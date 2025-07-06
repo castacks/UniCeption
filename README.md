@@ -7,6 +7,26 @@ Please refer to the [Developer Guidelines](#developer-guidelines) for contributi
 
 ## Installation
 
+### Install from PyPI
+
+The easiest way to install UniCeption is from PyPI:
+
+```bash
+# Install with base dependencies
+pip install uniception
+
+# Optional: Install with XFormers support
+pip install "uniception[xformers]"
+
+# Optional: Install with development tools
+pip install "uniception[dev]"
+
+# Optional: Install all optional dependencies
+pip install "uniception[all]"
+```
+
+### Install from Source
+
 Clone the repository to your local machine by running the following command:
 
 ```bash

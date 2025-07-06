@@ -38,7 +38,6 @@ def check_dependencies():
         "torchvision": "TorchVision",
         "torchaudio": "TorchAudio",
         "xformers": "XFormers",
-        "timm": "Timm (PyTorch Image Models)",
         "einops": "Einops",
         "matplotlib": "Matplotlib",
         "numpy": "NumPy",

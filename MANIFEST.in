@@ -1,0 +1,18 @@
+include LICENSE
+include README.md
+include pyproject.toml
+recursive-include uniception *.py
+recursive-include uniception *.pyx
+recursive-include uniception *.pxd
+recursive-include uniception *.c
+recursive-include uniception *.h
+recursive-include uniception *.cu
+recursive-include uniception *.cuh
+recursive-include uniception *.so
+recursive-include uniception *.dll
+recursive-include uniception *.dylib
+recursive-include uniception *.json
+recursive-include uniception *.yaml
+recursive-include uniception *.yml
+recursive-include uniception *.md
+recursive-include scripts *.py
