@@ -7,7 +7,7 @@ packages = ["uniception", "scripts"]
 
 [project]
 name = "uniception"
-version = "0.1.1"
+version = "0.1.2"
 description = "Generalizable Perception Stack for 3D, 4D, spatial AI and scene understanding"
 readme = "README.md"
 authors = [
