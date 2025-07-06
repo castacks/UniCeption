@@ -47,6 +47,9 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
         mlp_layer: Type[nn.Module] = Mlp,
         custom_positional_encoding: Optional[Union[str, Callable]] = None,
         use_scalable_softmax: bool = False,
+        use_entropy_scaling: bool = False,
+        base_token_count_for_entropy_scaling: int = 444,
+        entropy_scaling_growth_factor: float = 1.4,
         pretrained_checkpoint_path: Optional[str] = None,
         gradient_checkpointing: bool = False,
         *args,
@@ -75,6 +78,10 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
             mlp_layer (nn.Module): MLP layer (default: Mlp)
             custom_positional_encoding (Callable): Custom positional encoding function (default: None)
             use_scalable_softmax (bool): Whether to use scalable softmax (default: False)
+            use_entropy_scaling (bool): Whether to use entropy scaling (default: False)
+            base_token_count_for_entropy_scaling (int): Base token count for entropy scaling (default: 444)
+                                                        Computed using (518, 168) as base resolution with 14 patch size
+            entropy_scaling_growth_factor (float): Growth factor for entropy scaling (default: 1.4)
             pretrained_checkpoint_path (str, optional): Path to the pretrained checkpoint. (default: None)
             gradient_checkpointing (bool, optional): Whether to use gradient checkpointing for memory efficiency. (default: False)
         """
@@ -100,6 +107,9 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
         self.mlp_layer = mlp_layer
         self.custom_positional_encoding = custom_positional_encoding
         self.use_scalable_softmax = use_scalable_softmax
+        self.use_entropy_scaling = use_entropy_scaling
+        self.base_token_count_for_entropy_scaling = base_token_count_for_entropy_scaling
+        self.entropy_scaling_growth_factor = entropy_scaling_growth_factor
         self.pretrained_checkpoint_path = pretrained_checkpoint_path
         self.gradient_checkpointing = gradient_checkpointing
 
@@ -135,6 +145,9 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
                     mlp_layer=self.mlp_layer,
                     custom_positional_encoding=self.custom_positional_encoding,
                     use_scalable_softmax=self.use_scalable_softmax,
+                    use_entropy_scaling=self.use_entropy_scaling,
+                    base_token_count_for_entropy_scaling=self.base_token_count_for_entropy_scaling,
+                    entropy_scaling_growth_factor=self.entropy_scaling_growth_factor,
                 )
                 for _ in range(self.depth)
             ]
@@ -356,6 +369,9 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
         mlp_layer: nn.Module = Mlp,
         custom_positional_encoding: Callable = None,
         use_scalable_softmax: bool = False,
+        use_entropy_scaling: bool = False,
+        base_token_count_for_entropy_scaling: int = 444,
+        entropy_scaling_growth_factor: float = 1.4,
         pretrained_checkpoint_path: str = None,
         indices: Optional[Union[int, List[int]]] = None,
         norm_intermediate: bool = True,
@@ -388,6 +404,10 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
             mlp_layer (nn.Module): MLP layer (default: Mlp)
             custom_positional_encoding (Callable): Custom positional encoding function (default: None)
             use_scalable_softmax (bool): Whether to use scalable softmax. (default: False)
+            use_entropy_scaling (bool): Whether to use entropy scaling (default: False)
+            base_token_count_for_entropy_scaling (int): Base token count for entropy scaling (default: 444)
+                                                        Computed using (518, 168) as base resolution with 14 patch size
+            entropy_scaling_growth_factor (float): Growth factor for entropy scaling (default: 1.4)
             pretrained_checkpoint_path (str, optional): Path to the pretrained checkpoint. (default: None)
             indices (Optional[Union[int, List[int]]], optional): Indices of the layers to return. (default: None) Options:
             - None: Return all intermediate layers.
@@ -420,6 +440,9 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
             mlp_layer=mlp_layer,
             custom_positional_encoding=custom_positional_encoding,
             use_scalable_softmax=use_scalable_softmax,
+            use_entropy_scaling=use_entropy_scaling,
+            base_token_count_for_entropy_scaling=base_token_count_for_entropy_scaling,
+            entropy_scaling_growth_factor=entropy_scaling_growth_factor,
             pretrained_checkpoint_path=pretrained_checkpoint_path,
             gradient_checkpointing=gradient_checkpointing,
             *args,
@@ -640,6 +663,9 @@ class GlobalAttentionTransformer(UniCeptionInfoSharingBase):
         norm_layer: Union[Type[nn.Module], Callable[..., nn.Module]] = partial(nn.LayerNorm, eps=1e-6),
         mlp_layer: Type[nn.Module] = Mlp,
         use_scalable_softmax: bool = False,
+        use_entropy_scaling: bool = False,
+        base_token_count_for_entropy_scaling: int = 444,
+        entropy_scaling_growth_factor: float = 1.4,
         pretrained_checkpoint_path: Optional[str] = None,
         gradient_checkpointing: bool = False,
         *args,
@@ -667,6 +693,10 @@ class GlobalAttentionTransformer(UniCeptionInfoSharingBase):
             norm_layer (nn.Module): Normalization layer (default: nn.LayerNorm)
             mlp_layer (nn.Module): MLP layer (default: Mlp)
             use_scalable_softmax (bool): Whether to use scalable softmax (default: False)
+            use_entropy_scaling (bool): Whether to use entropy scaling (default: False)
+            base_token_count_for_entropy_scaling (int): Base token count for entropy scaling (default: 444)
+                                                        Computed using (518, 168) as base resolution with 14 patch size
+            entropy_scaling_growth_factor (float): Growth factor for entropy scaling (default: 1.4)
             pretrained_checkpoint_path (str, optional): Path to the pretrained checkpoint. (default: None)
             gradient_checkpointing (bool, optional): Whether to use gradient checkpointing for memory efficiency. (default: False)
         """
@@ -691,6 +721,9 @@ class GlobalAttentionTransformer(UniCeptionInfoSharingBase):
         self.norm_layer = norm_layer
         self.mlp_layer = mlp_layer
         self.use_scalable_softmax = use_scalable_softmax
+        self.use_entropy_scaling = use_entropy_scaling
+        self.base_token_count_for_entropy_scaling = base_token_count_for_entropy_scaling
+        self.entropy_scaling_growth_factor = entropy_scaling_growth_factor
         self.pretrained_checkpoint_path = pretrained_checkpoint_path
         self.gradient_checkpointing = gradient_checkpointing
 
@@ -717,6 +750,9 @@ class GlobalAttentionTransformer(UniCeptionInfoSharingBase):
                     norm_layer=self.norm_layer,
                     mlp_layer=self.mlp_layer,
                     use_scalable_softmax=self.use_scalable_softmax,
+                    use_entropy_scaling=self.use_entropy_scaling,
+                    base_token_count_for_entropy_scaling=self.base_token_count_for_entropy_scaling,
+                    entropy_scaling_growth_factor=self.entropy_scaling_growth_factor,
                 )
                 for _ in range(self.depth)
             ]
