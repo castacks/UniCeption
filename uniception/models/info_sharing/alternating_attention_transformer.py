@@ -26,6 +26,7 @@ class MultiViewAlternatingAttentionTransformer(UniCeptionInfoSharingBase):
         self,
         name: str,
         input_embed_dim: int,
+        distinguish_ref_and_non_ref_views: bool = True,
         use_pe_for_non_reference_views: bool = False,
         max_num_views_for_pe: int = 1000,
         use_rand_idx_pe_for_non_reference_views: bool = True,
@@ -59,7 +60,8 @@ class MultiViewAlternatingAttentionTransformer(UniCeptionInfoSharingBase):
 
         Args:
             input_embed_dim (int): Dimension of input embeddings.
-            use_pe_for_non_reference_views (bool): Whether to use view positional encoding for input non-reference views. (default: False)
+            distinguish_ref_and_non_ref_views (bool): Whether to identify/distinguish reference and non-reference views by using positional encoding. (default: True)
+            use_pe_for_non_reference_views (bool): Whether to use view positional encoding for input non-reference views. Only used if distinguish_ref_and_non_ref_views flag is True. (default: False)
             max_num_views_for_pe (int): Maximum number of views for positional encoding. (default: 1000)
             use_rand_idx_pe_for_non_reference_views (bool): Whether to use random index positional encoding for non-reference views. (default: True)
             size (str): String to indicate interpretable size of the transformer (for e.g., base, large, ...). (default: None)
@@ -90,6 +92,7 @@ class MultiViewAlternatingAttentionTransformer(UniCeptionInfoSharingBase):
 
         # Initialize the specific attributes of the transformer
         self.input_embed_dim = input_embed_dim
+        self.distinguish_ref_and_non_ref_views = distinguish_ref_and_non_ref_views
         self.use_pe_for_non_reference_views = use_pe_for_non_reference_views
         self.max_num_views_for_pe = max_num_views_for_pe
         self.use_rand_idx_pe_for_non_reference_views = use_rand_idx_pe_for_non_reference_views
@@ -153,18 +156,20 @@ class MultiViewAlternatingAttentionTransformer(UniCeptionInfoSharingBase):
         if self.custom_positional_encoding is not None:
             self.position_getter = PositionGetter()
 
-        if self.use_pe_for_non_reference_views:
-            # Initialize the positional encoding table for the different views
-            self.register_buffer(
-                "view_pos_table",
-                self._get_sinusoid_encoding_table(self.max_num_views_for_pe, self.dim, 10000),
-            )
-        else:
-            # Initialize the positional encoding table for the reference view
-            self.register_buffer(
-                "view_pos_table",
-                self._get_sinusoid_encoding_table(1, self.dim, 10000),
-            )
+        # Initialize the positional encoding table for the views if required
+        if self.distinguish_ref_and_non_ref_views:
+            if self.use_pe_for_non_reference_views:
+                # Initialize the positional encoding table for the different views
+                self.register_buffer(
+                    "view_pos_table",
+                    self._get_sinusoid_encoding_table(self.max_num_views_for_pe, self.dim, 10000),
+                )
+            else:
+                # Initialize the positional encoding table for the reference view
+                self.register_buffer(
+                    "view_pos_table",
+                    self._get_sinusoid_encoding_table(1, self.dim, 10000),
+                )
 
         # Initialize random weights
         self.initialize_weights()
@@ -288,14 +293,17 @@ class MultiViewAlternatingAttentionTransformer(UniCeptionInfoSharingBase):
             additional_tokens_positions = [None] * model_input.additional_input_tokens.shape[1]
             multi_view_positions = multi_view_positions + additional_tokens_positions
 
-        # Add positional encoding for reference view (idx 0)
-        ref_view_pe = self.view_pos_table[0].clone().detach()
-        ref_view_pe = ref_view_pe.reshape((1, 1, self.dim))
-        ref_view_pe = ref_view_pe.repeat(batch_size, num_of_tokens_per_view, 1)
-        ref_view_features = multi_view_features[:, :num_of_tokens_per_view, :]
-        ref_view_features = ref_view_features + ref_view_pe
+        if self.distinguish_ref_and_non_ref_views:
+            # Add positional encoding for reference view (idx 0)
+            ref_view_pe = self.view_pos_table[0].clone().detach()
+            ref_view_pe = ref_view_pe.reshape((1, 1, self.dim))
+            ref_view_pe = ref_view_pe.repeat(batch_size, num_of_tokens_per_view, 1)
+            ref_view_features = multi_view_features[:, :num_of_tokens_per_view, :]
+            ref_view_features = ref_view_features + ref_view_pe
+        else:
+            ref_view_features = multi_view_features[:, :num_of_tokens_per_view, :]
 
-        if self.use_pe_for_non_reference_views:
+        if self.distinguish_ref_and_non_ref_views and self.use_pe_for_non_reference_views:
             # Add positional encoding for non-reference views (sequential indices starting from idx 1 or random indices which are uniformly sampled)
             if self.use_rand_idx_pe_for_non_reference_views:
                 non_ref_view_pe_indices = torch.randint(low=1, high=self.max_num_views_for_pe, size=(num_of_views - 1,))
@@ -409,6 +417,7 @@ class MultiViewAlternatingAttentionTransformerIFR(
         self,
         name: str,
         input_embed_dim: int,
+        distinguish_ref_and_non_ref_views: bool = True,
         use_pe_for_non_reference_views: bool = False,
         max_num_views_for_pe: int = 1000,
         use_rand_idx_pe_for_non_reference_views: bool = True,
@@ -445,7 +454,8 @@ class MultiViewAlternatingAttentionTransformerIFR(
 
         Args:
             input_embed_dim (int): Dimension of input embeddings.
-            use_pe_for_non_reference_views (bool): Whether to use view positional encoding for input non-reference views. (default: False)
+            distinguish_ref_and_non_ref_views (bool): Whether to identify/distinguish reference and non-reference views by using positional encoding. (default: True)
+            use_pe_for_non_reference_views (bool): Whether to use view positional encoding for input non-reference views. Only used if distinguish_ref_and_non_ref_views flag is True. (default: False)
             max_num_views_for_pe (int): Maximum number of views for positional encoding. (default: 1000)
             use_rand_idx_pe_for_non_reference_views (bool): Whether to use random index positional encoding for non-reference views. (default: True)
             size (str): String to indicate interpretable size of the transformer (for e.g., base, large, ...). (default: None)
@@ -482,6 +492,7 @@ class MultiViewAlternatingAttentionTransformerIFR(
             self,
             name=name,
             input_embed_dim=input_embed_dim,
+            distinguish_ref_and_non_ref_views=distinguish_ref_and_non_ref_views,
             use_pe_for_non_reference_views=use_pe_for_non_reference_views,
             max_num_views_for_pe=max_num_views_for_pe,
             use_rand_idx_pe_for_non_reference_views=use_rand_idx_pe_for_non_reference_views,
@@ -604,14 +615,17 @@ class MultiViewAlternatingAttentionTransformerIFR(
             additional_tokens_positions = [None] * model_input.additional_input_tokens.shape[1]
             multi_view_positions = multi_view_positions + additional_tokens_positions
 
-        # Add positional encoding for reference view (idx 0)
-        ref_view_pe = self.view_pos_table[0].clone().detach()
-        ref_view_pe = ref_view_pe.reshape((1, 1, self.dim))
-        ref_view_pe = ref_view_pe.repeat(batch_size, num_of_tokens_per_view, 1)
-        ref_view_features = multi_view_features[:, :num_of_tokens_per_view, :]
-        ref_view_features = ref_view_features + ref_view_pe
+        if self.distinguish_ref_and_non_ref_views:
+            # Add positional encoding for reference view (idx 0)
+            ref_view_pe = self.view_pos_table[0].clone().detach()
+            ref_view_pe = ref_view_pe.reshape((1, 1, self.dim))
+            ref_view_pe = ref_view_pe.repeat(batch_size, num_of_tokens_per_view, 1)
+            ref_view_features = multi_view_features[:, :num_of_tokens_per_view, :]
+            ref_view_features = ref_view_features + ref_view_pe
+        else:
+            ref_view_features = multi_view_features[:, :num_of_tokens_per_view, :]
 
-        if self.use_pe_for_non_reference_views:
+        if self.distinguish_ref_and_non_ref_views and self.use_pe_for_non_reference_views:
             # Add positional encoding for non-reference views (sequential indices starting from idx 1 or random indices which are uniformly sampled)
             if self.use_rand_idx_pe_for_non_reference_views:
                 non_ref_view_pe_indices = torch.randint(low=1, high=self.max_num_views_for_pe, size=(num_of_views - 1,))
