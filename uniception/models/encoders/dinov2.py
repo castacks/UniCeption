@@ -22,6 +22,7 @@ class DINOv2Encoder(UniCeptionViTEncoderBase):
         patch_size: int = 14,
         size: str = "large",
         with_registers: bool = False,
+        norm_returned_features: bool = True,
         pretrained_checkpoint_path: str = None,
         torch_hub_force_reload: bool = False,
         gradient_checkpointing: bool = False,
@@ -59,6 +60,7 @@ class DINOv2Encoder(UniCeptionViTEncoderBase):
         # Init the DINOv2 Encoder specific attributes
         self.version = size
         self.with_registers = with_registers
+        self.norm_returned_features = norm_returned_features
         self.enc_embed_dim = {"small": 384, "base": 768, "large": 1024, "giant": 1536}[self.version]
 
         # Define DINOv2 model factory
@@ -93,6 +95,9 @@ class DINOv2Encoder(UniCeptionViTEncoderBase):
         del (
             self.model.mask_token
         )  # This parameter is unused in producing patch features, and will lead to unused parameters
+
+        if not norm_returned_features:
+            self.model.norm = nn.Identity()  # Drop final normalization if not desired
 
         # Keep only the first n layers of the model if keep_first_n_layers is specified
         if keep_first_n_layers is not None:
@@ -166,7 +171,10 @@ class DINOv2Encoder(UniCeptionViTEncoderBase):
         ), f"Input shape must be divisible by patch size: {self.patch_size}"
 
         # Extract the features from the DINOv2 model
-        features = self.model.forward_features(encoder_input.image)["x_norm_patchtokens"]
+        result_dict = self.model.forward_features(encoder_input.image)
+
+        # Patch tokens
+        features = result_dict["x_norm_patchtokens"]
 
         # Resize the features to the expected shape
         # (B x Num_patches x Embed_dim) -> (B x Embed_dim x H / Patch_Size x W / Patch_Size)
@@ -175,7 +183,23 @@ class DINOv2Encoder(UniCeptionViTEncoderBase):
             -1, self.enc_embed_dim, height // self.patch_size, width // self.patch_size
         ).contiguous()
 
-        return ViTEncoderOutput(features=features)
+        # Additional registers (including cls token) if present
+        additional_registers = []
+
+        # Add the cls token
+        cls_token = result_dict["x_norm_clstoken"].unsqueeze(1)  # (B x 1 x Embed_dim)
+        additional_registers.append(cls_token)
+
+        # Add the registers
+        registers = result_dict["x_norm_regtokens"]
+        if registers is not None:
+            additional_registers.append(registers)
+
+        all_registers = torch.cat(additional_registers, dim=1) if len(additional_registers) > 0 else None
+        if all_registers is not None:
+            all_registers = all_registers.permute(0, 2, 1).contiguous()  # (B x Embed_dim x Num_registers)
+
+        return ViTEncoderOutput(features=features, registers=all_registers)
 
 
 class DINOv2IntermediateFeatureReturner(DINOv2Encoder, IntermediateFeatureReturner):
@@ -257,11 +281,14 @@ class DINOv2IntermediateFeatureReturner(DINOv2Encoder, IntermediateFeatureReturn
 
         # Extract the intermediate features from the DINOv2 model
         intermediate_features = self.model.get_intermediate_layers(
-            encoder_input.image, n=self.indices, reshape=True, norm=self.norm_intermediate
+            encoder_input.image, n=self.indices, reshape=True, norm=self.norm_intermediate, return_class_token=True
         )
 
         # Convert the intermediate features to a list of ViTEncoderOutput
-        intermediate_features = [ViTEncoderOutput(features=features) for features in intermediate_features]
+        intermediate_features = [
+            ViTEncoderOutput(features=features, registers=cls_tokens.unsqueeze(-1))
+            for features, cls_tokens in intermediate_features
+        ]
 
         return intermediate_features
 

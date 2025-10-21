@@ -115,6 +115,7 @@ class ViTEncoderOutput(EncoderOutput):
     "Data class for Vision Transformer Encoder Output"
 
     features: Float[Tensor, "batch enc_embed_dim feat_height feat_width"]
+    registers: Optional[Float[Tensor, "batch enc_embed_dim num_registers"]] = None
 
 
 class UniCeptionViTEncoderBase(UniCeptionEncoderBase):

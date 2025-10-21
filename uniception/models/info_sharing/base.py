@@ -79,6 +79,9 @@ class MultiViewTransformerInput(InfoSharingInput):
 
     features: List[Float[Tensor, "batch input_embed_dim feat_height feat_width"]]
     additional_input_tokens: Optional[Float[Tensor, "batch input_embed_dim num_additional_tokens"]] = None
+    additional_input_tokens_per_view: Optional[
+        List[Float[Tensor, "batch input_embed_dim num_additional_tokens_per_view"]]
+    ] = None
 
 
 @dataclass
@@ -89,6 +92,9 @@ class MultiViewTransformerOutput(InfoSharingOutput):
 
     features: List[Float[Tensor, "batch transformer_embed_dim feat_height feat_width"]]
     additional_token_features: Optional[Float[Tensor, "batch transformer_embed_dim num_additional_tokens"]] = None
+    additional_token_features_per_view: Optional[
+        List[Float[Tensor, "batch transformer_embed_dim num_additional_tokens_per_view"]]
+    ] = None
 
 
 @dataclass

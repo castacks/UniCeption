@@ -135,6 +135,7 @@ def _make_encoder_test(encoder_str: str, **kwargs) -> UniCeptionEncoderBase:
             data_norm_type="croco",
             pretrained_checkpoint_path=f"{relative_checkpoint_path}/CroCo_Encoder_224.pth",
             patch_embed_cls="PatchEmbedCroCo",
+            **kwargs,
         )
     elif encoder_str == "dust3r_224":
         return CroCoEncoder(
@@ -142,6 +143,7 @@ def _make_encoder_test(encoder_str: str, **kwargs) -> UniCeptionEncoderBase:
             data_norm_type="dust3r",
             pretrained_checkpoint_path=f"{relative_checkpoint_path}/CroCo_Encoder_224_DUSt3R_linear.pth",
             patch_embed_cls="PatchEmbedDust3R",
+            **kwargs,
         )
     elif encoder_str == "dust3r_512":
         return CroCoEncoder(
@@ -150,6 +152,7 @@ def _make_encoder_test(encoder_str: str, **kwargs) -> UniCeptionEncoderBase:
             pretrained_checkpoint_path=f"{relative_checkpoint_path}/CroCo_Encoder_512_DUSt3R_linear.pth",
             patch_embed_cls="ManyAR_PatchEmbed",
             img_size=(512, 512),
+            **kwargs,
         )
     elif encoder_str == "dust3r_512_dpt":
         return CroCoEncoder(
@@ -158,6 +161,7 @@ def _make_encoder_test(encoder_str: str, **kwargs) -> UniCeptionEncoderBase:
             pretrained_checkpoint_path=f"{relative_checkpoint_path}/CroCo_Encoder_512_DUSt3R_dpt.pth",
             patch_embed_cls="ManyAR_PatchEmbed",
             img_size=(512, 512),
+            **kwargs,
         )
     elif encoder_str == "mast3r_512":
         return CroCoEncoder(
@@ -166,6 +170,7 @@ def _make_encoder_test(encoder_str: str, **kwargs) -> UniCeptionEncoderBase:
             pretrained_checkpoint_path=f"{relative_checkpoint_path}/CroCo_Encoder_512_MASt3R.pth",
             patch_embed_cls="ManyAR_PatchEmbed",
             img_size=(512, 512),
+            **kwargs,
         )
     elif "dinov2" in encoder_str:
         size = encoder_str.split("_")[1]
@@ -186,6 +191,7 @@ def _make_encoder_test(encoder_str: str, **kwargs) -> UniCeptionEncoderBase:
             size=size,
             with_registers=with_registers,
             pretrained_checkpoint_path=pretrained_checkpoint_path,
+            **kwargs,
         )
     elif "radio" in encoder_str:
         if "e-radio" in encoder_str:
@@ -193,9 +199,7 @@ def _make_encoder_test(encoder_str: str, **kwargs) -> UniCeptionEncoderBase:
         else:
             eradio_input_shape = None
         return RADIOEncoder(
-            name=encoder_str,
-            model_version=encoder_str,
-            eradio_input_shape=eradio_input_shape,
+            name=encoder_str, model_version=encoder_str, eradio_input_shape=eradio_input_shape, **kwargs
         )
     elif "cosmos" in encoder_str:
         patch_size = int(encoder_str.split("x")[-1])
@@ -203,11 +207,10 @@ def _make_encoder_test(encoder_str: str, **kwargs) -> UniCeptionEncoderBase:
             name=encoder_str,
             patch_size=patch_size,
             pretrained_checkpoint_path=f"{relative_checkpoint_path}/Cosmos-Tokenizer-CI{patch_size}x{patch_size}/encoder.pth",
+            **kwargs,
         )
     elif "patch_embedder" in encoder_str:
-        return PatchEmbedder(
-            name=encoder_str,
-        )
+        return PatchEmbedder(name=encoder_str, **kwargs)
     else:
         raise ValueError(f"Unknown encoder: {encoder_str}")
 

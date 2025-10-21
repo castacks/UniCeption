@@ -29,8 +29,10 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
         self,
         name: str,
         input_embed_dim: int,
-        max_num_views: int,
-        use_rand_idx_pe_for_non_reference_views: bool,
+        distinguish_ref_and_non_ref_views: bool = True,
+        use_pe_for_non_reference_views: bool = True,
+        max_num_views_for_pe: int = 1000,
+        use_rand_idx_pe_for_non_reference_views: bool = True,
         size: Optional[str] = None,
         depth: int = 12,
         dim: int = 768,
@@ -60,7 +62,9 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
 
         Args:
             input_embed_dim (int): Dimension of input embeddings.
-            max_num_views (int): Maximum number of views for positional encoding.
+            distinguish_ref_and_non_ref_views (bool): Whether to identify/distinguish reference and non-reference views by using positional encoding. (default: True)
+            use_pe_for_non_reference_views (bool): Whether to use view positional encoding for input non-reference views. Only used if distinguish_ref_and_non_ref_views flag is True. (default: True)
+            max_num_views_for_pe (int): Maximum number of views for positional encoding. (default: 1000)
             use_rand_idx_pe_for_non_reference_views (bool): Whether to use random index positional encoding for non-reference views.
             size (str): String to indicate interpretable size of the transformer (for e.g., base, large, ...). (default: None)
             depth (int): Number of transformer layers. (default: 12, base size)
@@ -90,7 +94,9 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
 
         # Initialize the specific attributes of the transformer
         self.input_embed_dim = input_embed_dim
-        self.max_num_views = max_num_views
+        self.distinguish_ref_and_non_ref_views = distinguish_ref_and_non_ref_views
+        self.use_pe_for_non_reference_views = use_pe_for_non_reference_views
+        self.max_num_views_for_pe = max_num_views_for_pe
         self.use_rand_idx_pe_for_non_reference_views = use_rand_idx_pe_for_non_reference_views
         self.depth = depth
         self.dim = dim
@@ -160,11 +166,20 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
         if self.custom_positional_encoding is not None:
             self.position_getter = PositionGetter()
 
-        # Initialize the positional encoding table for the different views
-        self.register_buffer(
-            "view_pos_table",
-            self._get_sinusoid_encoding_table(self.max_num_views, self.dim, 10000),
-        )
+        # Initialize the positional encoding table for the views if required
+        if self.distinguish_ref_and_non_ref_views:
+            if self.use_pe_for_non_reference_views:
+                # Initialize the positional encoding table for the different views
+                self.register_buffer(
+                    "view_pos_table",
+                    self._get_sinusoid_encoding_table(self.max_num_views_for_pe, self.dim, 10000),
+                )
+            else:
+                # Initialize the positional encoding table for the reference view
+                self.register_buffer(
+                    "view_pos_table",
+                    self._get_sinusoid_encoding_table(1, self.dim, 10000),
+                )
 
         # Initialize random weights
         self.initialize_weights()
@@ -221,16 +236,20 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
             model_input (MultiViewTransformerInput): Input to the model.
                 Expects the features to be a list of size (batch, input_embed_dim, height, width),
                 where each entry corresponds to a different view.
-                Optionally, the input can also include additional_input_tokens (e.g., class token, registers, pose tokens, scale token)
-                which are appended to the token set from the multi-view features. The tokens are of size (batch, input_embed_dim, num_of_additional_tokens).
+                Optionally, the input can also include:
+                - additional_input_tokens: Global additional tokens (e.g., scale token)
+                  which are appended to the token set from all multi-view features. Shape: (batch, input_embed_dim, num_of_additional_tokens).
+                - additional_input_tokens_per_view: Per-view additional tokens (e.g., view-specific tokens like per-view registers)
+                  which are appended to each view's token set. List of tensors, each of shape (batch, input_embed_dim, num_of_additional_tokens_per_view).
 
         Returns:
             MultiViewTransformerOutput: Output of the model post information sharing.
+                Returns view features and optionally additional_token_features (global) and additional_token_features_per_view (per-view).
         """
         # Check that the number of views matches the input and the features are of expected shape
         assert (
-            len(model_input.features) <= self.max_num_views
-        ), f"Expected less than {self.max_num_views} views, got {len(model_input.features)}"
+            len(model_input.features) <= self.max_num_views_for_pe
+        ), f"Expected less than {self.max_num_views_for_pe} views, got {len(model_input.features)}"
         assert all(
             curr_view_features.shape[1] == self.input_embed_dim for curr_view_features in model_input.features
         ), f"All views must have input dimension {self.input_embed_dim}"
@@ -244,14 +263,61 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
         batch_size, _, height, width = multi_view_features[0].shape
         num_of_tokens_per_view = height * width
 
-        # Stack the multi-view features (N, C, H, W) to (N, V, C, H, W) (assumes all V views have same shape)
-        multi_view_features = torch.stack(multi_view_features, dim=1)
+        # Process per-view additional tokens if provided
+        num_of_additional_tokens_per_view = 0
+        if model_input.additional_input_tokens_per_view is not None:
+            additional_tokens_per_view = model_input.additional_input_tokens_per_view
+            assert len(additional_tokens_per_view) == num_of_views, (
+                f"Number of additional token tensors ({len(additional_tokens_per_view)}) "
+                f"must match number of views ({num_of_views})"
+            )
+            assert all(
+                tokens.ndim == 3 for tokens in additional_tokens_per_view
+            ), "Additional tokens per view must have 3 dimensions (N, C, T)"
+            assert all(
+                tokens.shape[1] == self.input_embed_dim for tokens in additional_tokens_per_view
+            ), f"Additional tokens per view must have input dimension {self.input_embed_dim}"
+            assert all(
+                tokens.shape[0] == batch_size for tokens in additional_tokens_per_view
+            ), "Batch size mismatch for additional tokens per view"
 
-        # Resize the multi-view features from NVCHW to NLC, where L = V * H * W
-        multi_view_features = multi_view_features.permute(0, 1, 3, 4, 2)  # (N, V, H, W, C)
-        multi_view_features = multi_view_features.reshape(
-            batch_size, num_of_views * height * width, self.input_embed_dim
-        ).contiguous()
+            num_of_additional_tokens_per_view = additional_tokens_per_view[0].shape[2]
+
+            # Concatenate per-view additional tokens to each view's features
+            multi_view_features_with_tokens = []
+            for view_idx, (view_features, view_tokens) in enumerate(
+                zip(multi_view_features, additional_tokens_per_view)
+            ):
+                # view_features: (N, C, H, W)
+                # view_tokens: (N, C, T)
+                # Flatten spatial dimensions: (N, C, H, W) -> (N, C, H*W)
+                view_features_flat = view_features.reshape(batch_size, self.input_embed_dim, height * width)
+                # Concatenate tokens: (N, C, H*W + T)
+                view_with_tokens = torch.cat([view_features_flat, view_tokens], dim=2)
+                multi_view_features_with_tokens.append(view_with_tokens)
+
+            # Stack all views: (N, V, C, H*W + T)
+            multi_view_features = torch.stack(multi_view_features_with_tokens, dim=1)
+            # Permute to (N, V, H*W + T, C)
+            multi_view_features = multi_view_features.permute(0, 1, 3, 2)
+            # Reshape to (N, V * (H*W + T), C)
+            multi_view_features = multi_view_features.reshape(
+                batch_size,
+                num_of_views * (height * width + num_of_additional_tokens_per_view),
+                self.input_embed_dim,
+            ).contiguous()
+
+            # Update tokens per view to include additional tokens
+            num_of_tokens_per_view = height * width + num_of_additional_tokens_per_view
+        else:
+            # Stack the multi-view features (N, C, H, W) to (N, V, C, H, W) (assumes all V views have same shape)
+            multi_view_features = torch.stack(multi_view_features, dim=1)
+
+            # Resize the multi-view features from NVCHW to NLC, where L = V * H * W
+            multi_view_features = multi_view_features.permute(0, 1, 3, 4, 2)  # (N, V, H, W, C)
+            multi_view_features = multi_view_features.reshape(
+                batch_size, num_of_views * height * width, self.input_embed_dim
+            ).contiguous()
 
         # Process additional input tokens if provided
         if model_input.additional_input_tokens is not None:
@@ -271,6 +337,18 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
         # Project input features to the transformer dimension
         multi_view_features = self.proj_embed(multi_view_features)
 
+        # Raise error if custom positional encoding is used with additional tokens
+        if self.custom_positional_encoding is not None:
+            if (
+                model_input.additional_input_tokens is not None
+                or model_input.additional_input_tokens_per_view is not None
+            ):
+                raise ValueError(
+                    "Custom positional encoding is not supported when additional_input_tokens or "
+                    "additional_input_tokens_per_view are provided. Please set custom_positional_encoding=None "
+                    "or remove additional tokens from the input."
+                )
+
         # Create patch positions for each view if custom positional encoding is used
         if self.custom_positional_encoding is not None:
             multi_view_positions = [
@@ -282,29 +360,37 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
 
         # Add None positions for additional tokens if they exist
         if model_input.additional_input_tokens is not None:
-            additional_tokens_positions = [None] * model_input.additional_input_tokens.shape[1]
+            additional_tokens_positions = [None] * model_input.additional_input_tokens.shape[2]
             multi_view_positions = multi_view_positions + additional_tokens_positions
 
-        # Add positional encoding for reference view (idx 0)
-        ref_view_pe = self.view_pos_table[0].clone().detach()
-        ref_view_pe = ref_view_pe.reshape((1, 1, self.dim))
-        ref_view_pe = ref_view_pe.repeat(batch_size, num_of_tokens_per_view, 1)
-        ref_view_features = multi_view_features[:, :num_of_tokens_per_view, :]
-        ref_view_features = ref_view_features + ref_view_pe
-
-        # Add positional encoding for non-reference views (sequential indices starting from idx 1 or random indices which are uniformly sampled)
-        if self.use_rand_idx_pe_for_non_reference_views:
-            non_ref_view_pe_indices = torch.randint(low=1, high=self.max_num_views, size=(num_of_views - 1,))
+        if self.distinguish_ref_and_non_ref_views:
+            # Add positional encoding for reference view (idx 0)
+            ref_view_pe = self.view_pos_table[0].clone().detach()
+            ref_view_pe = ref_view_pe.reshape((1, 1, self.dim))
+            ref_view_pe = ref_view_pe.repeat(batch_size, num_of_tokens_per_view, 1)
+            ref_view_features = multi_view_features[:, :num_of_tokens_per_view, :]
+            ref_view_features = ref_view_features + ref_view_pe
         else:
-            non_ref_view_pe_indices = torch.arange(1, num_of_views)
-        non_ref_view_pe = self.view_pos_table[non_ref_view_pe_indices].clone().detach()
-        non_ref_view_pe = non_ref_view_pe.reshape((1, num_of_views - 1, self.dim))
-        non_ref_view_pe = non_ref_view_pe.repeat_interleave(num_of_tokens_per_view, dim=1)
-        non_ref_view_pe = non_ref_view_pe.repeat(batch_size, 1, 1)
-        non_ref_view_features = multi_view_features[
-            :, num_of_tokens_per_view : num_of_views * num_of_tokens_per_view, :
-        ]
-        non_ref_view_features = non_ref_view_features + non_ref_view_pe
+            ref_view_features = multi_view_features[:, :num_of_tokens_per_view, :]
+
+        if self.distinguish_ref_and_non_ref_views and self.use_pe_for_non_reference_views:
+            # Add positional encoding for non-reference views (sequential indices starting from idx 1 or random indices which are uniformly sampled)
+            if self.use_rand_idx_pe_for_non_reference_views:
+                non_ref_view_pe_indices = torch.randint(low=1, high=self.max_num_views_for_pe, size=(num_of_views - 1,))
+            else:
+                non_ref_view_pe_indices = torch.arange(1, num_of_views)
+            non_ref_view_pe = self.view_pos_table[non_ref_view_pe_indices].clone().detach()
+            non_ref_view_pe = non_ref_view_pe.reshape((1, num_of_views - 1, self.dim))
+            non_ref_view_pe = non_ref_view_pe.repeat_interleave(num_of_tokens_per_view, dim=1)
+            non_ref_view_pe = non_ref_view_pe.repeat(batch_size, 1, 1)
+            non_ref_view_features = multi_view_features[
+                :, num_of_tokens_per_view : num_of_views * num_of_tokens_per_view, :
+            ]
+            non_ref_view_features = non_ref_view_features + non_ref_view_pe
+        else:
+            non_ref_view_features = multi_view_features[
+                :, num_of_tokens_per_view : num_of_views * num_of_tokens_per_view, :
+            ]
 
         # Concatenate the reference and non-reference view features
         # Handle additional tokens (no view-based positional encoding for them)
@@ -322,26 +408,56 @@ class MultiViewGlobalAttentionTransformer(UniCeptionInfoSharingBase):
         # Normalize the output features
         output_multi_view_features = self.norm(multi_view_features)
 
-        # Extract only the view features (excluding additional tokens)
-        view_features = output_multi_view_features[:, : num_of_views * num_of_tokens_per_view, :]
+        # Extract view features (excluding global additional tokens)
+        view_features_flat = output_multi_view_features[:, : num_of_views * num_of_tokens_per_view, :]
 
-        # Reshape the output multi-view features (N, V * H * W, C) back to (N, V, C, H, W)
-        view_features = view_features.reshape(batch_size, num_of_views, height, width, self.dim)  # (N, V, H, W, C)
-        view_features = view_features.permute(0, 1, 4, 2, 3).contiguous()  # (N, V, C, H, W)
+        # Extract per-view additional tokens if they were provided
+        additional_token_features_per_view = None
+        if model_input.additional_input_tokens_per_view is not None:
+            # Reshape to (N, V, H*W + T_per_view, C)
+            view_features_with_tokens = view_features_flat.reshape(
+                batch_size, num_of_views, num_of_tokens_per_view, self.dim
+            )
 
-        # Split the output multi-view features into separate views
-        view_features = view_features.split(1, dim=1)
-        view_features = [output_view_features.squeeze(dim=1) for output_view_features in view_features]
+            # Split into spatial features and per-view additional tokens
+            spatial_tokens_per_view = height * width
+            view_features = view_features_with_tokens[:, :, :spatial_tokens_per_view, :]  # (N, V, H*W, C)
+            per_view_additional = view_features_with_tokens[:, :, spatial_tokens_per_view:, :]  # (N, V, T_per_view, C)
 
-        # Extract and return additional token features if provided
+            # Reshape view features to (N, V, H, W, C)
+            view_features = view_features.reshape(batch_size, num_of_views, height, width, self.dim)
+            view_features = view_features.permute(0, 1, 4, 2, 3).contiguous()  # (N, V, C, H, W)
+
+            # Split view features into separate views
+            view_features = view_features.split(1, dim=1)
+            view_features = [output_view_features.squeeze(dim=1) for output_view_features in view_features]
+
+            # Split per-view additional tokens and reshape to (N, C, T_per_view) for each view
+            per_view_additional = per_view_additional.split(1, dim=1)
+            additional_token_features_per_view = [
+                tokens.squeeze(dim=1).permute(0, 2, 1).contiguous()  # (N, T_per_view, C) -> (N, C, T_per_view)
+                for tokens in per_view_additional
+            ]
+        else:
+            # Reshape the output multi-view features (N, V * H * W, C) back to (N, V, H, W, C)
+            view_features = view_features_flat.reshape(batch_size, num_of_views, height, width, self.dim)
+            view_features = view_features.permute(0, 1, 4, 2, 3).contiguous()  # (N, V, C, H, W)
+
+            # Split the output multi-view features into separate views
+            view_features = view_features.split(1, dim=1)
+            view_features = [output_view_features.squeeze(dim=1) for output_view_features in view_features]
+
+        # Extract and return additional token features (global) if provided
+        additional_token_features = None
         if model_input.additional_input_tokens is not None:
             additional_token_features = output_multi_view_features[:, num_of_views * num_of_tokens_per_view :, :]
             additional_token_features = additional_token_features.permute(0, 2, 1).contiguous()  # (N, C, T)
-            return MultiViewTransformerOutput(
-                features=view_features, additional_token_features=additional_token_features
-            )
-        else:
-            return MultiViewTransformerOutput(features=view_features)
+
+        return MultiViewTransformerOutput(
+            features=view_features,
+            additional_token_features=additional_token_features,
+            additional_token_features_per_view=additional_token_features_per_view,
+        )
 
 
 class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer, IntermediateFeatureReturner):
@@ -351,8 +467,10 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
         self,
         name: str,
         input_embed_dim: int,
-        max_num_views: int,
-        use_rand_idx_pe_for_non_reference_views: bool,
+        distinguish_ref_and_non_ref_views: bool = True,
+        use_pe_for_non_reference_views: bool = True,
+        max_num_views_for_pe: int = 1000,
+        use_rand_idx_pe_for_non_reference_views: bool = True,
         size: Optional[str] = None,
         depth: int = 12,
         dim: int = 768,
@@ -386,7 +504,9 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
 
         Args:
             input_embed_dim (int): Dimension of input embeddings.
-            max_num_views (int): Maximum number of views for positional encoding.
+            distinguish_ref_and_non_ref_views (bool): Whether to identify/distinguish reference and non-reference views by using positional encoding. (default: True)
+            use_pe_for_non_reference_views (bool): Whether to use view positional encoding for input non-reference views. Only used if distinguish_ref_and_non_ref_views flag is True. (default: True)
+            max_num_views_for_pe (int): Maximum number of views for positional encoding. (default: 1000)
             use_rand_idx_pe_for_non_reference_views (bool): Whether to use random index positional encoding for non-reference views.
             size (str): String to indicate interpretable size of the transformer (for e.g., base, large, ...). (default: None)
             depth (int): Number of transformer layers. (default: 12, base size)
@@ -422,7 +542,9 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
             self,
             name=name,
             input_embed_dim=input_embed_dim,
-            max_num_views=max_num_views,
+            distinguish_ref_and_non_ref_views=distinguish_ref_and_non_ref_views,
+            use_pe_for_non_reference_views=use_pe_for_non_reference_views,
+            max_num_views_for_pe=max_num_views_for_pe,
             use_rand_idx_pe_for_non_reference_views=use_rand_idx_pe_for_non_reference_views,
             size=size,
             depth=depth,
@@ -458,10 +580,7 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
     def forward(
         self,
         model_input: MultiViewTransformerInput,
-    ) -> Union[
-        List[MultiViewTransformerOutput],
-        Tuple[MultiViewTransformerOutput, List[MultiViewTransformerOutput]],
-    ]:
+    ) -> Union[List[MultiViewTransformerOutput], Tuple[MultiViewTransformerOutput, List[MultiViewTransformerOutput]],]:
         """
         Forward interface for the Multi-View Global-Attention Transformer with Intermediate Feature Return.
 
@@ -469,18 +588,26 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
             model_input (MultiViewTransformerInput): Input to the model.
                 Expects the features to be a list of size (batch, input_embed_dim, height, width),
                 where each entry corresponds to a different view.
-                Optionally, the input can also include additional_input_tokens (e.g., class token, registers, pose tokens, scale token)
-                which are appended to the token set from the multi-view features. The tokens are of size (batch, input_embed_dim, num_of_additional_tokens).
+                Optionally, the input can also include:
+                - additional_input_tokens: Global additional tokens (e.g., scale token)
+                  which are appended to the token set from all multi-view features. Shape: (batch, input_embed_dim, num_of_additional_tokens).
+                - additional_input_tokens_per_view: Per-view additional tokens (e.g., view-specific tokens like per-view registers)
+                  which are appended to each view's token set. List of tensors, each of shape (batch, input_embed_dim, num_of_additional_tokens_per_view).
 
         Returns:
             Union[List[MultiViewTransformerOutput], Tuple[MultiViewTransformerOutput, List[MultiViewTransformerOutput]]]:
                 Output of the model post information sharing.
-                If intermediates_only is True, returns a list of intermediate outputs.
-                If intermediates_only is False, returns a tuple of final output and a list of intermediate outputs.
+                If intermediates_only is True, returns a list of intermediate outputs containing:
+                    - features: List of view features
+                    - additional_token_features: Global additional token features (if provided)
+                    - additional_token_features_per_view: Per-view additional token features (if provided)
+                If intermediates_only is False, returns a tuple of:
+                    - Final output (MultiViewTransformerOutput) with features, additional_token_features, and additional_token_features_per_view
+                    - List of intermediate outputs (MultiViewTransformerOutput) from specified layers
         """
         # Check that the number of views matches the input and the features are of expected shape
         assert (
-            len(model_input.features) <= self.max_num_views
+            len(model_input.features) <= self.max_num_views_for_pe
         ), f"Expected {self.num_views} views, got {len(model_input.features)}"
         assert all(
             curr_view_features.shape[1] == self.input_embed_dim for curr_view_features in model_input.features
@@ -499,14 +626,61 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
         batch_size, _, height, width = multi_view_features[0].shape
         num_of_tokens_per_view = height * width
 
-        # Stack the multi-view features (N, C, H, W) to (N, V, C, H, W) (assumes all V views have same shape)
-        multi_view_features = torch.stack(multi_view_features, dim=1)
+        # Process per-view additional tokens if provided
+        num_of_additional_tokens_per_view = 0
+        if model_input.additional_input_tokens_per_view is not None:
+            additional_tokens_per_view = model_input.additional_input_tokens_per_view
+            assert len(additional_tokens_per_view) == num_of_views, (
+                f"Number of additional token tensors ({len(additional_tokens_per_view)}) "
+                f"must match number of views ({num_of_views})"
+            )
+            assert all(
+                tokens.ndim == 3 for tokens in additional_tokens_per_view
+            ), "Additional tokens per view must have 3 dimensions (N, C, T)"
+            assert all(
+                tokens.shape[1] == self.input_embed_dim for tokens in additional_tokens_per_view
+            ), f"Additional tokens per view must have input dimension {self.input_embed_dim}"
+            assert all(
+                tokens.shape[0] == batch_size for tokens in additional_tokens_per_view
+            ), "Batch size mismatch for additional tokens per view"
 
-        # Resize the multi-view features from NVCHW to NLC, where L = V * H * W
-        multi_view_features = multi_view_features.permute(0, 1, 3, 4, 2)  # (N, V, H, W, C)
-        multi_view_features = multi_view_features.reshape(
-            batch_size, num_of_views * height * width, self.input_embed_dim
-        ).contiguous()
+            num_of_additional_tokens_per_view = additional_tokens_per_view[0].shape[2]
+
+            # Concatenate per-view additional tokens to each view's features
+            multi_view_features_with_tokens = []
+            for view_idx, (view_features, view_tokens) in enumerate(
+                zip(multi_view_features, additional_tokens_per_view)
+            ):
+                # view_features: (N, C, H, W)
+                # view_tokens: (N, C, T)
+                # Flatten spatial dimensions: (N, C, H, W) -> (N, C, H*W)
+                view_features_flat = view_features.reshape(batch_size, self.input_embed_dim, height * width)
+                # Concatenate tokens: (N, C, H*W + T)
+                view_with_tokens = torch.cat([view_features_flat, view_tokens], dim=2)
+                multi_view_features_with_tokens.append(view_with_tokens)
+
+            # Stack all views: (N, V, C, H*W + T)
+            multi_view_features = torch.stack(multi_view_features_with_tokens, dim=1)
+            # Permute to (N, V, H*W + T, C)
+            multi_view_features = multi_view_features.permute(0, 1, 3, 2)
+            # Reshape to (N, V * (H*W + T), C)
+            multi_view_features = multi_view_features.reshape(
+                batch_size,
+                num_of_views * (height * width + num_of_additional_tokens_per_view),
+                self.input_embed_dim,
+            ).contiguous()
+
+            # Update tokens per view to include additional tokens
+            num_of_tokens_per_view = height * width + num_of_additional_tokens_per_view
+        else:
+            # Stack the multi-view features (N, C, H, W) to (N, V, C, H, W) (assumes all V views have same shape)
+            multi_view_features = torch.stack(multi_view_features, dim=1)
+
+            # Resize the multi-view features from NVCHW to NLC, where L = V * H * W
+            multi_view_features = multi_view_features.permute(0, 1, 3, 4, 2)  # (N, V, H, W, C)
+            multi_view_features = multi_view_features.reshape(
+                batch_size, num_of_views * height * width, self.input_embed_dim
+            ).contiguous()
 
         # Process additional input tokens if provided
         if model_input.additional_input_tokens is not None:
@@ -526,6 +700,18 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
         # Project input features to the transformer dimension
         multi_view_features = self.proj_embed(multi_view_features)
 
+        # Raise error if custom positional encoding is used with additional tokens
+        if self.custom_positional_encoding is not None:
+            if (
+                model_input.additional_input_tokens is not None
+                or model_input.additional_input_tokens_per_view is not None
+            ):
+                raise ValueError(
+                    "Custom positional encoding is not supported when additional_input_tokens or "
+                    "additional_input_tokens_per_view are provided. Please set custom_positional_encoding=None "
+                    "or remove additional tokens from the input."
+                )
+
         # Create patch positions for each view if custom positional encoding is used
         if self.custom_positional_encoding is not None:
             multi_view_positions = [
@@ -537,29 +723,37 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
 
         # Add None positions for additional tokens if they exist
         if model_input.additional_input_tokens is not None:
-            additional_tokens_positions = [None] * model_input.additional_input_tokens.shape[1]
+            additional_tokens_positions = [None] * model_input.additional_input_tokens.shape[2]
             multi_view_positions = multi_view_positions + additional_tokens_positions
 
-        # Add positional encoding for reference view (idx 0)
-        ref_view_pe = self.view_pos_table[0].clone().detach()
-        ref_view_pe = ref_view_pe.reshape((1, 1, self.dim))
-        ref_view_pe = ref_view_pe.repeat(batch_size, num_of_tokens_per_view, 1)
-        ref_view_features = multi_view_features[:, :num_of_tokens_per_view, :]
-        ref_view_features = ref_view_features + ref_view_pe
-
-        # Add positional encoding for non-reference views (sequential indices starting from idx 1 or random indices which are uniformly sampled)
-        if self.use_rand_idx_pe_for_non_reference_views:
-            non_ref_view_pe_indices = torch.randint(low=1, high=self.max_num_views, size=(num_of_views - 1,))
+        if self.distinguish_ref_and_non_ref_views:
+            # Add positional encoding for reference view (idx 0)
+            ref_view_pe = self.view_pos_table[0].clone().detach()
+            ref_view_pe = ref_view_pe.reshape((1, 1, self.dim))
+            ref_view_pe = ref_view_pe.repeat(batch_size, num_of_tokens_per_view, 1)
+            ref_view_features = multi_view_features[:, :num_of_tokens_per_view, :]
+            ref_view_features = ref_view_features + ref_view_pe
         else:
-            non_ref_view_pe_indices = torch.arange(1, num_of_views)
-        non_ref_view_pe = self.view_pos_table[non_ref_view_pe_indices].clone().detach()
-        non_ref_view_pe = non_ref_view_pe.reshape((1, num_of_views - 1, self.dim))
-        non_ref_view_pe = non_ref_view_pe.repeat_interleave(num_of_tokens_per_view, dim=1)
-        non_ref_view_pe = non_ref_view_pe.repeat(batch_size, 1, 1)
-        non_ref_view_features = multi_view_features[
-            :, num_of_tokens_per_view : num_of_views * num_of_tokens_per_view, :
-        ]
-        non_ref_view_features = non_ref_view_features + non_ref_view_pe
+            ref_view_features = multi_view_features[:, :num_of_tokens_per_view, :]
+
+        if self.distinguish_ref_and_non_ref_views and self.use_pe_for_non_reference_views:
+            # Add positional encoding for non-reference views (sequential indices starting from idx 1 or random indices which are uniformly sampled)
+            if self.use_rand_idx_pe_for_non_reference_views:
+                non_ref_view_pe_indices = torch.randint(low=1, high=self.max_num_views_for_pe, size=(num_of_views - 1,))
+            else:
+                non_ref_view_pe_indices = torch.arange(1, num_of_views)
+            non_ref_view_pe = self.view_pos_table[non_ref_view_pe_indices].clone().detach()
+            non_ref_view_pe = non_ref_view_pe.reshape((1, num_of_views - 1, self.dim))
+            non_ref_view_pe = non_ref_view_pe.repeat_interleave(num_of_tokens_per_view, dim=1)
+            non_ref_view_pe = non_ref_view_pe.repeat(batch_size, 1, 1)
+            non_ref_view_features = multi_view_features[
+                :, num_of_tokens_per_view : num_of_views * num_of_tokens_per_view, :
+            ]
+            non_ref_view_features = non_ref_view_features + non_ref_view_pe
+        else:
+            non_ref_view_features = multi_view_features[
+                :, num_of_tokens_per_view : num_of_views * num_of_tokens_per_view, :
+            ]
 
         # Concatenate the reference and non-reference view features
         # Handle additional tokens (no view-based positional encoding for them)
@@ -584,28 +778,63 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
             # Get the current intermediate features
             current_features = intermediate_multi_view_features[idx]
 
-            # Extract additional token features if provided
+            # Extract view features (excluding global additional tokens)
+            view_features_flat = current_features[:, : num_of_views * num_of_tokens_per_view, :]
+
+            # Extract per-view additional tokens if they were provided
+            additional_token_features_per_view = None
+            if model_input.additional_input_tokens_per_view is not None:
+                # Reshape to (N, V, H*W + T_per_view, C)
+                view_features_with_tokens = view_features_flat.reshape(
+                    batch_size, num_of_views, num_of_tokens_per_view, self.dim
+                )
+
+                # Split into spatial features and per-view additional tokens
+                spatial_tokens_per_view = height * width
+                view_features = view_features_with_tokens[:, :, :spatial_tokens_per_view, :]  # (N, V, H*W, C)
+                per_view_additional = view_features_with_tokens[
+                    :, :, spatial_tokens_per_view:, :
+                ]  # (N, V, T_per_view, C)
+
+                # Reshape view features to (N, V, H, W, C)
+                view_features = view_features.reshape(batch_size, num_of_views, height, width, self.dim)
+                view_features = view_features.permute(0, 1, 4, 2, 3).contiguous()  # (N, V, C, H, W)
+
+                # Split view features into separate views
+                view_features = view_features.split(1, dim=1)
+                view_features = [
+                    intermediate_view_features.squeeze(dim=1) for intermediate_view_features in view_features
+                ]
+
+                # Split per-view additional tokens and reshape to (N, C, T_per_view) for each view
+                per_view_additional = per_view_additional.split(1, dim=1)
+                additional_token_features_per_view = [
+                    tokens.squeeze(dim=1).permute(0, 2, 1).contiguous()  # (N, T_per_view, C) -> (N, C, T_per_view)
+                    for tokens in per_view_additional
+                ]
+            else:
+                # Reshape the intermediate multi-view features (N, V * H * W, C) back to (N, V, H, W, C)
+                view_features = view_features_flat.reshape(
+                    batch_size, num_of_views, height, width, self.dim
+                )  # (N, V, H, W, C)
+                view_features = view_features.permute(0, 1, 4, 2, 3).contiguous()  # (N, V, C, H, W)
+
+                # Split the intermediate multi-view features into separate views
+                view_features = view_features.split(1, dim=1)
+                view_features = [
+                    intermediate_view_features.squeeze(dim=1) for intermediate_view_features in view_features
+                ]
+
+            # Extract and return additional token features (global) if provided
             additional_token_features = None
             if model_input.additional_input_tokens is not None:
                 additional_token_features = current_features[:, num_of_views * num_of_tokens_per_view :, :]
                 additional_token_features = additional_token_features.permute(0, 2, 1).contiguous()  # (N, C, T)
-                # Only keep the view features for reshaping
-                current_features = current_features[:, : num_of_views * num_of_tokens_per_view, :]
-
-            # Reshape the intermediate multi-view features (N, V * H * W, C) back to (N, V, C, H, W)
-            current_features = current_features.reshape(
-                batch_size, num_of_views, height, width, self.dim
-            )  # (N, V, H, W, C)
-            current_features = current_features.permute(0, 1, 4, 2, 3).contiguous()  # (N, V, C, H, W)
-
-            # Split the intermediate multi-view features into separate views
-            current_features = current_features.split(1, dim=1)
-            current_features = [
-                intermediate_view_features.squeeze(dim=1) for intermediate_view_features in current_features
-            ]
 
             intermediate_multi_view_features[idx] = MultiViewTransformerOutput(
-                features=current_features, additional_token_features=additional_token_features
+                features=view_features,
+                additional_token_features=additional_token_features,
+                additional_token_features_per_view=additional_token_features_per_view,
             )
 
         # Return only the intermediate features if enabled
@@ -615,25 +844,55 @@ class MultiViewGlobalAttentionTransformerIFR(MultiViewGlobalAttentionTransformer
         # Normalize the output features
         output_multi_view_features = self.norm(multi_view_features)
 
-        # Extract view features (excluding additional tokens)
+        # Extract view features (excluding global additional tokens)
+        view_features_flat = output_multi_view_features[:, : num_of_views * num_of_tokens_per_view, :]
+
+        # Extract per-view additional tokens if they were provided
+        additional_token_features_per_view = None
+        if model_input.additional_input_tokens_per_view is not None:
+            # Reshape to (N, V, H*W + T_per_view, C)
+            view_features_with_tokens = view_features_flat.reshape(
+                batch_size, num_of_views, num_of_tokens_per_view, self.dim
+            )
+
+            # Split into spatial features and per-view additional tokens
+            spatial_tokens_per_view = height * width
+            view_features = view_features_with_tokens[:, :, :spatial_tokens_per_view, :]  # (N, V, H*W, C)
+            per_view_additional = view_features_with_tokens[:, :, spatial_tokens_per_view:, :]  # (N, V, T_per_view, C)
+
+            # Reshape view features to (N, V, H, W, C)
+            view_features = view_features.reshape(batch_size, num_of_views, height, width, self.dim)
+            view_features = view_features.permute(0, 1, 4, 2, 3).contiguous()  # (N, V, C, H, W)
+
+            # Split view features into separate views
+            view_features = view_features.split(1, dim=1)
+            view_features = [output_view_features.squeeze(dim=1) for output_view_features in view_features]
+
+            # Split per-view additional tokens and reshape to (N, C, T_per_view) for each view
+            per_view_additional = per_view_additional.split(1, dim=1)
+            additional_token_features_per_view = [
+                tokens.squeeze(dim=1).permute(0, 2, 1).contiguous()  # (N, T_per_view, C) -> (N, C, T_per_view)
+                for tokens in per_view_additional
+            ]
+        else:
+            # Reshape the output multi-view features (N, V * H * W, C) back to (N, V, H, W, C)
+            view_features = view_features_flat.reshape(batch_size, num_of_views, height, width, self.dim)
+            view_features = view_features.permute(0, 1, 4, 2, 3).contiguous()  # (N, V, C, H, W)
+
+            # Split the output multi-view features into separate views
+            view_features = view_features.split(1, dim=1)
+            view_features = [output_view_features.squeeze(dim=1) for output_view_features in view_features]
+
+        # Extract and return additional token features (global) if provided
         additional_token_features = None
         if model_input.additional_input_tokens is not None:
             additional_token_features = output_multi_view_features[:, num_of_views * num_of_tokens_per_view :, :]
             additional_token_features = additional_token_features.permute(0, 2, 1).contiguous()  # (N, C, T)
-            view_features = output_multi_view_features[:, : num_of_views * num_of_tokens_per_view, :]
-        else:
-            view_features = output_multi_view_features
-
-        # Reshape the output multi-view features (N, V * H * W, C) back to (N, V, C, H, W)
-        view_features = view_features.reshape(batch_size, num_of_views, height, width, self.dim)  # (N, V, H, W, C)
-        view_features = view_features.permute(0, 1, 4, 2, 3).contiguous()  # (N, V, C, H, W)
-
-        # Split the output multi-view features into separate views
-        view_features = view_features.split(1, dim=1)
-        view_features = [output_view_features.squeeze(dim=1) for output_view_features in view_features]
 
         output_multi_view_features = MultiViewTransformerOutput(
-            features=view_features, additional_token_features=additional_token_features
+            features=view_features,
+            additional_token_features=additional_token_features,
+            additional_token_features_per_view=additional_token_features_per_view,
         )
 
         return output_multi_view_features, intermediate_multi_view_features
@@ -934,7 +1193,8 @@ class GlobalAttentionTransformer(UniCeptionInfoSharingBase):
 
         # Return the output multi-set features with additional token features if provided
         return MultiSetTransformerOutput(
-            features=output_multi_set_features, additional_token_features=additional_token_features
+            features=output_multi_set_features,
+            additional_token_features=additional_token_features,
         )
 
 
@@ -951,7 +1211,10 @@ if __name__ == "__main__":
         print(f"Testing MultiViewGlobalAttentionTransformer with {num_views} views ...")
         # Sequential idx based positional encoding
         model = MultiViewGlobalAttentionTransformer(
-            name="MV-GAT", input_embed_dim=1024, max_num_views=1000, use_rand_idx_pe_for_non_reference_views=False
+            name="MV-GAT",
+            input_embed_dim=1024,
+            max_num_views_for_pe=1000,
+            use_rand_idx_pe_for_non_reference_views=False,
         )
         model_input = [torch.rand(1, 1024, 14, 14) for _ in range(num_views)]
         model_input = MultiViewTransformerInput(features=model_input)
@@ -960,7 +1223,10 @@ if __name__ == "__main__":
         assert all(f.shape == (1, model.dim, 14, 14) for f in model_output.features)
         # Random idx based positional encoding
         model = MultiViewGlobalAttentionTransformer(
-            name="MV-GAT", input_embed_dim=1024, max_num_views=1000, use_rand_idx_pe_for_non_reference_views=True
+            name="MV-GAT",
+            input_embed_dim=1024,
+            max_num_views_for_pe=1000,
+            use_rand_idx_pe_for_non_reference_views=True,
         )
         model_input = [torch.rand(1, 1024, 14, 14) for _ in range(num_views)]
         model_input = MultiViewTransformerInput(features=model_input)
@@ -974,7 +1240,7 @@ if __name__ == "__main__":
         model = MultiViewGlobalAttentionTransformer(
             name="MV-GAT",
             input_embed_dim=1024,
-            max_num_views=1000,
+            max_num_views_for_pe=1000,
             use_rand_idx_pe_for_non_reference_views=True,
             custom_positional_encoding=dummy_positional_encoding,
         )
@@ -993,7 +1259,7 @@ if __name__ == "__main__":
     model_intermediate_feature_returner = MultiViewGlobalAttentionTransformerIFR(
         name="MV-GAT-IFR",
         input_embed_dim=1024,
-        max_num_views=1000,
+        max_num_views_for_pe=1000,
         use_rand_idx_pe_for_non_reference_views=True,
         indices=6,  # Last 6 layers
     )
@@ -1010,7 +1276,7 @@ if __name__ == "__main__":
     model_intermediate_feature_returner = MultiViewGlobalAttentionTransformerIFR(
         name="MV-GAT-IFR",
         input_embed_dim=1024,
-        max_num_views=1000,
+        max_num_views_for_pe=1000,
         use_rand_idx_pe_for_non_reference_views=True,
         indices=[0, 2, 4, 6],  # Specific indices
     )
@@ -1027,7 +1293,7 @@ if __name__ == "__main__":
     model_intermediate_feature_returner = MultiViewGlobalAttentionTransformerIFR(
         name="MV-GAT-IFR",
         input_embed_dim=1024,
-        max_num_views=1000,
+        max_num_views_for_pe=1000,
         use_rand_idx_pe_for_non_reference_views=True,
         indices=[-1],  # Last layer
         norm_intermediate=False,  # Disable normalization
@@ -1043,7 +1309,7 @@ if __name__ == "__main__":
     model_intermediate_feature_returner = MultiViewGlobalAttentionTransformerIFR(
         name="MV-GAT-IFR",
         input_embed_dim=1024,
-        max_num_views=1000,
+        max_num_views_for_pe=1000,
         use_rand_idx_pe_for_non_reference_views=True,
         indices=[-1],  # Last layer
         norm_intermediate=True,
@@ -1062,7 +1328,10 @@ if __name__ == "__main__":
     import random
 
     model = GlobalAttentionTransformer(
-        name="GAT", input_embed_dim=1024, max_num_sets=3, use_rand_idx_pe_for_non_reference_sets=False
+        name="GAT",
+        input_embed_dim=1024,
+        max_num_sets=3,
+        use_rand_idx_pe_for_non_reference_sets=False,
     )
     for num_sets in [2, 3]:
         print(f"Testing GlobalAttentionTransformer with {num_sets} sets ...")
@@ -1076,7 +1345,10 @@ if __name__ == "__main__":
             assert feat.shape[0] == rand_input.shape[0]
     # Random idx based positional encoding
     model = GlobalAttentionTransformer(
-        name="GAT", input_embed_dim=1024, max_num_sets=1000, use_rand_idx_pe_for_non_reference_sets=True
+        name="GAT",
+        input_embed_dim=1024,
+        max_num_sets=1000,
+        use_rand_idx_pe_for_non_reference_sets=True,
     )
     for num_sets in [2, 3, 4]:
         print(f"Testing GlobalAttentionTransformer with {num_sets} sets ...")
@@ -1094,7 +1366,10 @@ if __name__ == "__main__":
     # Test additional input tokens for MultiViewGlobalAttentionTransformer
     print("Testing MultiViewGlobalAttentionTransformer with additional input tokens...")
     model = MultiViewGlobalAttentionTransformer(
-        name="MV-GAT", input_embed_dim=1024, max_num_views=1000, use_rand_idx_pe_for_non_reference_views=False
+        name="MV-GAT",
+        input_embed_dim=1024,
+        max_num_views_for_pe=1000,
+        use_rand_idx_pe_for_non_reference_views=False,
     )
     num_views = 2
     num_additional_tokens = 5
@@ -1105,14 +1380,18 @@ if __name__ == "__main__":
     assert len(model_output.features) == num_views
     assert all(f.shape == (1, model.dim, 14, 14) for f in model_output.features)
     assert model_output.additional_token_features is not None
-    assert model_output.additional_token_features.shape == (1, model.dim, num_additional_tokens)
+    assert model_output.additional_token_features.shape == (
+        1,
+        model.dim,
+        num_additional_tokens,
+    )
 
     # Test additional input tokens for MultiViewGlobalAttentionTransformerIFR
     print("Testing MultiViewGlobalAttentionTransformerIFR with additional input tokens...")
     model_ifr = MultiViewGlobalAttentionTransformerIFR(
         name="MV-GAT-IFR",
         input_embed_dim=1024,
-        max_num_views=1000,
+        max_num_views_for_pe=1000,
         use_rand_idx_pe_for_non_reference_views=True,
         indices=[0, 2, 4],
     )
@@ -1123,7 +1402,11 @@ if __name__ == "__main__":
     assert isinstance(output, tuple)
     assert isinstance(output[0], MultiViewTransformerOutput)
     assert output[0].additional_token_features is not None
-    assert output[0].additional_token_features.shape == (1, model_ifr.dim, num_additional_tokens)
+    assert output[0].additional_token_features.shape == (
+        1,
+        model_ifr.dim,
+        num_additional_tokens,
+    )
     assert len(output[1]) == 3
     assert all(isinstance(intermediate, MultiViewTransformerOutput) for intermediate in output[1])
     assert all(intermediate.additional_token_features is not None for intermediate in output[1])
@@ -1135,7 +1418,10 @@ if __name__ == "__main__":
     # Test additional input tokens for GlobalAttentionTransformer
     print("Testing GlobalAttentionTransformer with additional input tokens...")
     model = GlobalAttentionTransformer(
-        name="GAT", input_embed_dim=1024, max_num_sets=1000, use_rand_idx_pe_for_non_reference_sets=False
+        name="GAT",
+        input_embed_dim=1024,
+        max_num_sets=1000,
+        use_rand_idx_pe_for_non_reference_sets=False,
     )
     num_sets = 3
     num_additional_tokens = 8
@@ -1149,6 +1435,105 @@ if __name__ == "__main__":
         assert feat.shape[1] == model.dim
         assert feat.shape[0] == rand_input.shape[0]
     assert model_output.additional_token_features is not None
-    assert model_output.additional_token_features.shape == (1, model.dim, num_additional_tokens)
+    assert model_output.additional_token_features.shape == (
+        1,
+        model.dim,
+        num_additional_tokens,
+    )
 
     print("All tests using additional input tokens passed!")
+
+    # Test both additional_input_tokens and additional_input_tokens_per_view together for MultiViewGlobalAttentionTransformer
+    print(
+        "Testing MultiViewGlobalAttentionTransformer with both additional_input_tokens and additional_input_tokens_per_view..."
+    )
+    model = MultiViewGlobalAttentionTransformer(
+        name="MV-GAT",
+        input_embed_dim=1024,
+        max_num_views_for_pe=1000,
+        use_rand_idx_pe_for_non_reference_views=False,
+    )
+    num_views = 3
+    num_additional_tokens = 5
+    num_additional_tokens_per_view = 8
+    model_input = [torch.rand(1, 1024, 14, 14) for _ in range(num_views)]
+    additional_tokens = torch.rand(1, 1024, num_additional_tokens)
+    additional_tokens_per_view = [torch.rand(1, 1024, num_additional_tokens_per_view) for _ in range(num_views)]
+    model_input = MultiViewTransformerInput(
+        features=model_input,
+        additional_input_tokens=additional_tokens,
+        additional_input_tokens_per_view=additional_tokens_per_view,
+    )
+    model_output = model(model_input)
+    assert len(model_output.features) == num_views
+    assert all(f.shape == (1, model.dim, 14, 14) for f in model_output.features)
+    assert model_output.additional_token_features is not None
+    assert model_output.additional_token_features.shape == (
+        1,
+        model.dim,
+        num_additional_tokens,
+    )
+    assert model_output.additional_token_features_per_view is not None
+    assert len(model_output.additional_token_features_per_view) == num_views
+    assert all(
+        tokens.shape == (1, model.dim, num_additional_tokens_per_view)
+        for tokens in model_output.additional_token_features_per_view
+    )
+
+    # Test both additional_input_tokens and additional_input_tokens_per_view together for MultiViewGlobalAttentionTransformerIFR
+    print(
+        "Testing MultiViewGlobalAttentionTransformerIFR with both additional_input_tokens and additional_input_tokens_per_view..."
+    )
+    model_ifr = MultiViewGlobalAttentionTransformerIFR(
+        name="MV-GAT-IFR",
+        input_embed_dim=1024,
+        max_num_views_for_pe=1000,
+        use_rand_idx_pe_for_non_reference_views=True,
+        indices=[0, 5, 11],
+    )
+    num_views = 2
+    num_additional_tokens = 3
+    num_additional_tokens_per_view = 6
+    model_input = [torch.rand(1, 1024, 14, 14) for _ in range(num_views)]
+    additional_tokens = torch.rand(1, 1024, num_additional_tokens)
+    additional_tokens_per_view = [torch.rand(1, 1024, num_additional_tokens_per_view) for _ in range(num_views)]
+    model_input = MultiViewTransformerInput(
+        features=model_input,
+        additional_input_tokens=additional_tokens,
+        additional_input_tokens_per_view=additional_tokens_per_view,
+    )
+    output = model_ifr(model_input)
+    assert isinstance(output, tuple)
+    assert isinstance(output[0], MultiViewTransformerOutput)
+    assert len(output[0].features) == num_views
+    assert all(f.shape == (1, model_ifr.dim, 14, 14) for f in output[0].features)
+    assert output[0].additional_token_features is not None
+    assert output[0].additional_token_features.shape == (
+        1,
+        model_ifr.dim,
+        num_additional_tokens,
+    )
+    assert output[0].additional_token_features_per_view is not None
+    assert len(output[0].additional_token_features_per_view) == num_views
+    assert all(
+        tokens.shape == (1, model_ifr.dim, num_additional_tokens_per_view)
+        for tokens in output[0].additional_token_features_per_view
+    )
+    assert len(output[1]) == 3
+    assert all(isinstance(intermediate, MultiViewTransformerOutput) for intermediate in output[1])
+    assert all(intermediate.additional_token_features is not None for intermediate in output[1])
+    assert all(
+        intermediate.additional_token_features.shape == (1, model_ifr.dim, num_additional_tokens)
+        for intermediate in output[1]
+    )
+    assert all(intermediate.additional_token_features_per_view is not None for intermediate in output[1])
+    assert all(len(intermediate.additional_token_features_per_view) == num_views for intermediate in output[1])
+    assert all(
+        all(
+            tokens.shape == (1, model_ifr.dim, num_additional_tokens_per_view)
+            for tokens in intermediate.additional_token_features_per_view
+        )
+        for intermediate in output[1]
+    )
+
+    print("All tests using both additional_input_tokens and additional_input_tokens_per_view passed!")
