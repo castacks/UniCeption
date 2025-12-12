@@ -5,6 +5,7 @@ Download the UniCeption format checkpoints from the AirLab Data Server
 import argparse
 import os
 
+import urllib3
 from minio import Minio
 from minio.error import S3Error
 from tqdm import tqdm
@@ -23,7 +24,14 @@ def main():
 
     access_key = "bT79gQYtfhpxFIitlpns"
     secret_key = "g7mSvUJ5k2a9mKv9IbhwXmUQjQX52MLwulhW9ONO"
-    client = Minio("airlab-share-02.andrew.cmu.edu:9000", access_key=access_key, secret_key=secret_key, secure=True)
+    # client = Minio("airlab-share-02.andrew.cmu.edu:9000", access_key=access_key, secret_key=secret_key, secure=True)
+    client = Minio(
+        "airlab-share-02.andrew.cmu.edu:9000",
+        access_key=access_key,
+        secret_key=secret_key,
+        secure=True,
+        http_client=urllib3.PoolManager(cert_reqs="CERT_NONE"),  # disables SSL verification
+    )
 
     bucket_name = "uniception"
 

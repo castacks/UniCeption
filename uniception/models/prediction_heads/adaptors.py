@@ -8,7 +8,6 @@ from typing import List, Tuple, Union
 
 import numpy as np
 import torch
-import torch.nn as nn
 
 from uniception.models.prediction_heads import (
     AdaptorInput,
@@ -258,6 +257,45 @@ class DepthAdaptor(UniCeptionAdaptorBase):
         return RegressionAdaptorOutput(value=output_depth)
 
 
+class SceneFlowAdaptor(UniCeptionAdaptorBase):
+    def __init__(self, name: str, mode: str, vmin: float = -np.inf, vmax: float = np.inf, *args, **kwargs):
+        """
+        Adaptor for the Motion head in UniCeption.
+        """
+        super().__init__(name, required_channels=3, *args, **kwargs)
+
+        self.mode = mode
+        self.vmin = vmin
+        self.vmax = vmax
+
+        self.no_bounds = (vmin == -float("inf")) and (vmax == float("inf"))
+
+    def forward(self, adaptor_input: AdaptorInput):
+        """
+        Forward pass for the SceneFlowAdaptor.
+
+        Args:
+            adaptor_input (AdaptorInput): Input to the adaptor. (B x C x H x W)
+        Returns:
+            AdaptorOutput: Output of the adaptor.
+        """
+        dxdydz = adaptor_input.adaptor_feature
+
+        if self.mode == "linear":
+            output_dxdydz = dxdydz
+        elif self.mode == "square":
+            output_dxdydz = dxdydz**2
+        elif self.mode == "exp":
+            output_dxdydz = torch.exp(dxdydz)
+        else:
+            raise ValueError(f"Invalid mode: {self.mode}")
+
+        if not self.no_bounds:
+            output_dxdydz = output_dxdydz.clip(self.vmin, self.vmax)
+
+        return RegressionAdaptorOutput(value=output_dxdydz)
+
+
 class PointMapAdaptor(UniCeptionAdaptorBase):
     def __init__(self, name: str, mode: str, vmin: float = -np.inf, vmax: float = np.inf, *args, **kwargs):
         """
@@ -497,6 +535,73 @@ class RayDirectionsPlusDepthAdaptor(UniCeptionAdaptorBase):
         output_ray_directions = self.ray_directions_adaptor(ray_directions_adaptor_input)
         output_depth = self.depth_adaptor(depth_adaptor_input)
         output = torch.cat([output_ray_directions.value, output_depth.value], dim=1)
+
+        return RegressionAdaptorOutput(value=output)
+
+
+class RayDirectionsPlusDepthPlusSceneFlowAdaptor(UniCeptionAdaptorBase):
+    def __init__(
+        self,
+        name: str,
+        # Ray directions adaptor
+        ray_directions_mode: str,
+        ray_directions_normalize_to_unit_sphere: bool,
+        ray_directions_normalize_to_unit_image_plane: bool,
+        ray_directions_vmin: float,
+        ray_directions_vmax: float,
+        ray_directions_clamp_min_of_z_dir: bool,
+        ray_directions_z_dir_min: float,
+        # Depth adaptor
+        depth_mode: str,
+        depth_vmin: float,
+        depth_vmax: float,
+        # Scene flow adaptor
+        scene_flow_mode: str,
+        scene_flow_vmin: float,
+        scene_flow_vmax: float,
+        *args,
+        **kwargs,
+    ):
+        """
+        Adaptor for the RayDirections + Depth + SceneFlow head in UniCeption.
+        """
+        super().__init__(name, required_channels=7, *args, **kwargs)
+
+        self.ray_directions_adaptor = RayDirectionsAdaptor(
+            name,
+            ray_directions_mode,
+            ray_directions_normalize_to_unit_sphere,
+            ray_directions_normalize_to_unit_image_plane,
+            ray_directions_vmin,
+            ray_directions_vmax,
+            ray_directions_clamp_min_of_z_dir,
+            ray_directions_z_dir_min,
+        )
+        self.depth_adaptor = DepthAdaptor(name, depth_mode, depth_vmin, depth_vmax)
+
+        self.scene_flow_adaptor = SceneFlowAdaptor(name, scene_flow_mode, scene_flow_vmin, scene_flow_vmax)
+
+    def forward(self, adaptor_input: AdaptorInput):
+        """
+        Forward pass for the RayDirectionsPlusDepthPlusSceneFlowAdaptor.
+
+        Args:
+            adaptor_input (AdaptorInput): Input to the adaptor. (B x C x H x W)
+        Returns:
+            AdaptorOutput: Output of the adaptor.
+        """
+        ray_directions, ray_depths, scene_flow = torch.split(adaptor_input.adaptor_feature, [3, 1, 3], dim=1)
+        ray_directions_adaptor_input = AdaptorInput(
+            adaptor_feature=ray_directions, output_shape_hw=adaptor_input.output_shape_hw
+        )
+        depth_adaptor_input = AdaptorInput(adaptor_feature=ray_depths, output_shape_hw=adaptor_input.output_shape_hw)
+        scene_flow_adaptor_input = AdaptorInput(
+            adaptor_feature=scene_flow, output_shape_hw=adaptor_input.output_shape_hw
+        )
+        output_ray_directions = self.ray_directions_adaptor(ray_directions_adaptor_input)
+        output_depth = self.depth_adaptor(depth_adaptor_input)
+        output_scene_flow = self.scene_flow_adaptor(scene_flow_adaptor_input)
+        output = torch.cat([output_ray_directions.value, output_depth.value, output_scene_flow.value], dim=1)
 
         return RegressionAdaptorOutput(value=output)
 
@@ -1269,6 +1374,66 @@ class RayDirectionsPlusDepthWithConfidenceAdaptor(ValueWithConfidenceAdaptor):
         )
 
 
+class RayDirectionsPlusDepthPlusSceneFlowWithConfidenceAdaptor(ValueWithConfidenceAdaptor):
+    def __init__(
+        self,
+        name: str,
+        # Ray directions adaptor
+        ray_directions_mode: str,
+        ray_directions_normalize_to_unit_sphere: bool,
+        ray_directions_normalize_to_unit_image_plane: bool,
+        ray_directions_vmin: float,
+        ray_directions_vmax: float,
+        ray_directions_clamp_min_of_z_dir: bool,
+        ray_directions_z_dir_min: float,
+        # Depth adaptor
+        depth_mode: str,
+        depth_vmin: float,
+        depth_vmax: float,
+        # Scene flow adaptor
+        scene_flow_mode: str,
+        scene_flow_vmin: float,
+        scene_flow_vmax: float,
+        # Confidence adaptor
+        confidence_type: str,
+        confidence_vmin: float,
+        confidence_vmax: float,
+        *args,
+        **kwargs,
+    ):
+        """
+        Adaptor for the RayDirections + Depth with Confidence head in UniCeption.
+        """
+        ray_directions_plus_depth_plus_scene_flow_adaptor = RayDirectionsPlusDepthPlusSceneFlowAdaptor(
+            name=f"{name}",
+            ray_directions_mode=ray_directions_mode,
+            ray_directions_normalize_to_unit_sphere=ray_directions_normalize_to_unit_sphere,
+            ray_directions_normalize_to_unit_image_plane=ray_directions_normalize_to_unit_image_plane,
+            ray_directions_vmin=ray_directions_vmin,
+            ray_directions_vmax=ray_directions_vmax,
+            ray_directions_clamp_min_of_z_dir=ray_directions_clamp_min_of_z_dir,
+            ray_directions_z_dir_min=ray_directions_z_dir_min,
+            depth_mode=depth_mode,
+            depth_vmin=depth_vmin,
+            depth_vmax=depth_vmax,
+            scene_flow_mode=scene_flow_mode,
+            scene_flow_vmin=scene_flow_vmin,
+            scene_flow_vmax=scene_flow_vmax,
+        )
+
+        confidence_adaptor = ConfidenceAdaptor(
+            name=f"{name}_confidence", confidence_type=confidence_type, vmin=confidence_vmin, vmax=confidence_vmax
+        )
+
+        super().__init__(
+            name,
+            value_adaptor=ray_directions_plus_depth_plus_scene_flow_adaptor,
+            confidence_adaptor=confidence_adaptor,
+            *args,
+            **kwargs,
+        )
+
+
 class RayMapPlusDepthWithConfidenceAdaptor(ValueWithConfidenceAdaptor):
     def __init__(
         self,
@@ -1324,7 +1489,7 @@ class RayMapPlusDepthWithConfidenceAdaptor(ValueWithConfidenceAdaptor):
         )
 
 
-class RayMapPlusDepthPlusQuatswithConfidenceAdaptor(ValueWithConfidenceAdaptor):
+class RayMapPlusDepthPlusQuatsWithConfidenceAdaptor(ValueWithConfidenceAdaptor):
     def __init__(
         self,
         name: str,
@@ -1503,7 +1668,11 @@ class PointMapPlusRayDirectionsPlusDepthWithMaskAdaptor(ValueWithMaskAdaptor):
         mask_adaptor = MaskAdaptor(name=f"{name}_mask")
 
         super().__init__(
-            name, value_adaptor=pointmap_plus_ray_directions_plus_depth_adaptor, mask_adaptor=mask_adaptor, *args, **kwargs
+            name,
+            value_adaptor=pointmap_plus_ray_directions_plus_depth_adaptor,
+            mask_adaptor=mask_adaptor,
+            *args,
+            **kwargs,
         )
 
 
@@ -1547,6 +1716,60 @@ class RayDirectionsPlusDepthWithMaskAdaptor(ValueWithMaskAdaptor):
 
         super().__init__(
             name, value_adaptor=ray_directions_plus_depth_adaptor, mask_adaptor=mask_adaptor, *args, **kwargs
+        )
+
+
+class RayDirectionsPlusDepthPlusSceneFlowWithMaskAdaptor(ValueWithMaskAdaptor):
+    def __init__(
+        self,
+        name: str,
+        # Ray directions adaptor
+        ray_directions_mode: str,
+        ray_directions_normalize_to_unit_sphere: bool,
+        ray_directions_normalize_to_unit_image_plane: bool,
+        ray_directions_vmin: float,
+        ray_directions_vmax: float,
+        ray_directions_clamp_min_of_z_dir: bool,
+        ray_directions_z_dir_min: float,
+        # Depth adaptor
+        depth_mode: str,
+        depth_vmin: float,
+        depth_vmax: float,
+        # Scene flow adaptor
+        scene_flow_mode: str,
+        scene_flow_vmin: float,
+        scene_flow_vmax: float,
+        *args,
+        **kwargs,
+    ):
+        """
+        Adaptor for the RayDirections + Depth with Mask head in UniCeption.
+        """
+        ray_directions_plus_depth_plus_scene_flow_adaptor = RayDirectionsPlusDepthPlusSceneFlowAdaptor(
+            name=f"{name}",
+            ray_directions_mode=ray_directions_mode,
+            ray_directions_normalize_to_unit_sphere=ray_directions_normalize_to_unit_sphere,
+            ray_directions_normalize_to_unit_image_plane=ray_directions_normalize_to_unit_image_plane,
+            ray_directions_vmin=ray_directions_vmin,
+            ray_directions_vmax=ray_directions_vmax,
+            ray_directions_clamp_min_of_z_dir=ray_directions_clamp_min_of_z_dir,
+            ray_directions_z_dir_min=ray_directions_z_dir_min,
+            depth_mode=depth_mode,
+            depth_vmin=depth_vmin,
+            depth_vmax=depth_vmax,
+            scene_flow_mode=scene_flow_mode,
+            scene_flow_vmin=scene_flow_vmin,
+            scene_flow_vmax=scene_flow_vmax,
+        )
+
+        mask_adaptor = MaskAdaptor(name=f"{name}_mask")
+
+        super().__init__(
+            name,
+            value_adaptor=ray_directions_plus_depth_plus_scene_flow_adaptor,
+            mask_adaptor=mask_adaptor,
+            *args,
+            **kwargs,
         )
 
 
@@ -1597,7 +1820,7 @@ class RayMapPlusDepthWithMaskAdaptor(ValueWithMaskAdaptor):
         super().__init__(name, value_adaptor=raymap_plus_depth_adaptor, mask_adaptor=mask_adaptor, *args, **kwargs)
 
 
-class RayMapPlusDepthPlusQuatswithMaskAdaptor(ValueWithMaskAdaptor):
+class RayMapPlusDepthPlusQuatsWithMaskAdaptor(ValueWithMaskAdaptor):
     def __init__(
         self,
         name: str,
@@ -1869,6 +2092,69 @@ class RayDirectionsPlusDepthWithConfidenceAndMaskAdaptor(ValueWithConfidenceAndM
         )
 
 
+class RayDirectionsPlusDepthPlusSceneFlowWithConfidenceAndMaskAdaptor(ValueWithConfidenceAndMaskAdaptor):
+    def __init__(
+        self,
+        name: str,
+        # Ray directions adaptor
+        ray_directions_mode: str,
+        ray_directions_normalize_to_unit_sphere: bool,
+        ray_directions_normalize_to_unit_image_plane: bool,
+        ray_directions_vmin: float,
+        ray_directions_vmax: float,
+        ray_directions_clamp_min_of_z_dir: bool,
+        ray_directions_z_dir_min: float,
+        # Depth adaptor
+        depth_mode: str,
+        depth_vmin: float,
+        depth_vmax: float,
+        # Scene flow adaptor
+        scene_flow_mode: str,
+        scene_flow_vmin: float,
+        scene_flow_vmax: float,
+        # Confidence adaptor
+        confidence_type: str,
+        confidence_vmin: float,
+        confidence_vmax: float,
+        *args,
+        **kwargs,
+    ):
+        """
+        Adaptor for the RayDirections + Depth with Confidence & Mask head in UniCeption.
+        """
+        ray_directions_plus_depth_plus_scene_flow_adaptor = RayDirectionsPlusDepthPlusSceneFlowAdaptor(
+            name=f"{name}",
+            ray_directions_mode=ray_directions_mode,
+            ray_directions_normalize_to_unit_sphere=ray_directions_normalize_to_unit_sphere,
+            ray_directions_normalize_to_unit_image_plane=ray_directions_normalize_to_unit_image_plane,
+            ray_directions_vmin=ray_directions_vmin,
+            ray_directions_vmax=ray_directions_vmax,
+            ray_directions_clamp_min_of_z_dir=ray_directions_clamp_min_of_z_dir,
+            ray_directions_z_dir_min=ray_directions_z_dir_min,
+            depth_mode=depth_mode,
+            depth_vmin=depth_vmin,
+            depth_vmax=depth_vmax,
+            scene_flow_mode=scene_flow_mode,
+            scene_flow_vmin=scene_flow_vmin,
+            scene_flow_vmax=scene_flow_vmax,
+        )
+
+        confidence_adaptor = ConfidenceAdaptor(
+            name=f"{name}_confidence", confidence_type=confidence_type, vmin=confidence_vmin, vmax=confidence_vmax
+        )
+
+        mask_adaptor = MaskAdaptor(name=f"{name}_mask")
+
+        super().__init__(
+            name,
+            value_adaptor=ray_directions_plus_depth_plus_scene_flow_adaptor,
+            confidence_adaptor=confidence_adaptor,
+            mask_adaptor=mask_adaptor,
+            *args,
+            **kwargs,
+        )
+
+
 class RayMapPlusDepthWithConfidenceAndMaskAdaptor(ValueWithConfidenceAndMaskAdaptor):
     def __init__(
         self,
@@ -1931,7 +2217,7 @@ class RayMapPlusDepthWithConfidenceAndMaskAdaptor(ValueWithConfidenceAndMaskAdap
         )
 
 
-class RayMapPlusDepthPlusQuatswithConfidenceAndMaskAdaptor(ValueWithConfidenceAndMaskAdaptor):
+class RayMapPlusDepthPlusQuatsWithConfidenceAndMaskAdaptor(ValueWithConfidenceAndMaskAdaptor):
     def __init__(
         self,
         name: str,

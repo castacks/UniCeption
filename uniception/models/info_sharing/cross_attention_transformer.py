@@ -390,10 +390,7 @@ class MultiViewCrossAttentionTransformerIFR(MultiViewCrossAttentionTransformer, 
     def forward(
         self,
         model_input: MultiViewTransformerInput,
-    ) -> Union[
-        List[MultiViewTransformerOutput],
-        Tuple[MultiViewTransformerOutput, List[MultiViewTransformerOutput]],
-    ]:
+    ) -> Union[List[MultiViewTransformerOutput], Tuple[MultiViewTransformerOutput, List[MultiViewTransformerOutput]],]:
         """
         Forward interface for the Multi-View Cross-Attention Transformer with Intermediate Feature Return.
 
