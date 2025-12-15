@@ -95,13 +95,13 @@ class FlowAdaptor(UniCeptionAdaptorBase):
         if not self.output_normalized_coordinate:
             x_scale, y_scale = self._get_xy_scale(output_shape)
 
-            # Scale the flow by stored mean, std and scaling factors
-            flow_mean = self.flow_mean * torch.tensor([x_scale, y_scale], dtype=torch.float32, device=x.device).view(
-                1, 2, 1, 1
-            )
-            flow_std = self.flow_std * torch.tensor([x_scale, y_scale], dtype=torch.float32, device=x.device).view(
-                1, 2, 1, 1
-            )
+            # Get the stored mean, std and scaling factors to scale the flow
+            flow_mean = self.flow_mean.clone()
+            flow_mean[:, 0] *= x_scale
+            flow_mean[:, 1] *= y_scale
+            flow_std = self.flow_std.clone()
+            flow_std[:, 0] *= x_scale
+            flow_std[:, 1] *= y_scale
 
             # Unnormalize the flow
             x = x * flow_std + flow_mean
@@ -1101,6 +1101,7 @@ class Covariance2DAdaptor(UniCeptionAdaptorBase):
         self,
         name: str,
         parametrization: str = "exp_tanh",
+        low_confidence_init: bool = False,
         *args,
         **kwargs,
     ):
@@ -1109,12 +1110,17 @@ class Covariance2DAdaptor(UniCeptionAdaptorBase):
         """
         super().__init__(name, required_channels=3, *args, **kwargs)
         self.parametrization = parametrization
+        self.low_confidence_init = low_confidence_init
 
     def forward(self, adaptor_input: AdaptorInput):
         x = adaptor_input.adaptor_feature
 
         if self.parametrization == "exp_tanh":
             c1, c2, s = torch.split(x, 1, dim=1)
+
+            if self.low_confidence_init:
+                c1 = c1 + 8
+                c2 = c2 + 8
 
             diag_exponent = (c1 + c2) / 2
             tanh_s = s.tanh()
@@ -1131,7 +1137,33 @@ class Covariance2DAdaptor(UniCeptionAdaptorBase):
         else:
             raise ValueError(f"Invalid parametrization: {self.parametrization}")
 
-        return Covariance2DAdaptorOutput(covariance=cov, log_det=log_det, inv_covariance=inv_cov)
+        return Covariance2DAdaptorOutput(covariance=cov, log_det=log_det, inv_covariance=inv_cov, log_representation=x)
+
+    @classmethod
+    def decode(cls, x: torch.Tensor, representation: str):
+        if representation == "exp_tanh":
+            c1, c2, s = torch.split(x, 1, dim=1)
+
+            # For smooth initialization
+            c1 = c1 + 8
+            c2 = c2 + 8
+
+            diag_exponent = (c1 + c2) / 2
+            tanh_s = s.tanh()
+
+            cov = torch.cat([c1.exp(), c2.exp(), tanh_s * torch.exp(diag_exponent)], dim=1)
+
+            log_det = c1 + c2 + torch.log(1 - torch.square(tanh_s) + 1e-8)
+
+            inv_coeff = 1 / (1 - torch.square(tanh_s) + 1e-8)
+            inv_cov = inv_coeff * torch.cat(
+                [torch.exp(-c1), torch.exp(-c2), -tanh_s * torch.exp(-diag_exponent)], dim=1
+            )
+
+        else:
+            raise ValueError(f"Invalid parametrization: {representation}")
+
+        return Covariance2DAdaptorOutput(covariance=cov, log_det=log_det, inv_covariance=inv_cov, log_representation=x)
 
 
 class MaskAdaptor(UniCeptionAdaptorBase):

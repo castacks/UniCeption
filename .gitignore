@@ -168,4 +168,7 @@ cython_debug/
 
 # VS Code
 .vscode/
+
+# Local
+checkpoints/**
 upload.py

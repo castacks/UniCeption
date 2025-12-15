@@ -36,6 +36,8 @@ dependencies = [
     "einops",
     "rerun-sdk",
     "minio",
+    "torchmetrics",
+    "termcolor",
 ]
 
 [project.urls]

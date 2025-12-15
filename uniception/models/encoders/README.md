@@ -2,15 +2,49 @@
 
 ## Currently Supported Encoders
 
-### UniCeptionViTEncoderBase:
+### Vision Transformer (ViT) Based Encoders:
 
-- `CroCoEncoder`
-   - `CroCoIntermediateFeatureReturner`
-- `DINOv2Encoder`
-   - `DINOv2IntermediateFeatureReturner`
-- `PatchEmbedder`
-- `RADIOEncoder`
-   - `RADIOIntermediateFeatureReturner`
+- **`CroCoEncoder`**
+    - `CroCoIntermediateFeatureReturner`
+    - Supported Models: CroCov2, DUSt3R, MASt3R
+
+- **`DINOv2Encoder`**
+    - `DINOv2IntermediateFeatureReturner`
+    - Supported Models: DINOv2, DINOv2-Registers, DINOv2-Depth-Anythingv2
+
+- **`DINOv3Encoder`**
+    - `DINOv3IntermediateFeatureReturner`
+    - Supported Models: DINOv3-ViT
+
+- **`DINOv3ConvNextEncoder`**
+    - `DINOv3ConvNextIntermediateFeatureReturner`
+    - Supported Models: DINOv3-ConvNext
+
+- **`DUNEEncoder`**
+    - `DUNEIntermediateFeatureReturner`
+    - Supported Models: DUNE
+
+- **`PerceptionEncoder`**
+    - `PerceptionEncoderIntermediateFeatureReturner`
+    - Supported Models: Perception Encoder Core, Preception Encoder Spatial
+
+- **`RADIOEncoder`**
+    - `RADIOIntermediateFeatureReturner`
+    - Supported Models: RADIO, E-RADIO
+
+### Other Encoders:
+
+- **`CosmosEncoder`**
+    - Supported Models: Cosmos-Tokenizer CI8x8, Cosmos-Tokenizer CI16x16
+
+- **`DenseRepresentationEncoder`**
+    - Supported Models: Dense-Representation-Encoder
+
+- **`GlobalRepresentationEncoder`**
+    - Supported Models: Global-Representation-Encoder
+
+- **`PatchEmbedder`**
+    - Supported Models: Patch-Embedder
 
 # Developer Guidelines for UniCeption Encoders
 

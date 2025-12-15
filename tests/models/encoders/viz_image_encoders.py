@@ -38,9 +38,16 @@ class TestEncoders:
             "dinov2_large_dav2",
             "dinov2_giant",
             "dinov2_giant_reg",
+            "dinov2_base_reg",
+            "dinov3_base",
+            "dinov3_convnext_base",
+            "dune",
             "radio_v2.5-b",
             "radio_v2.5-l",
             "e-radio_v2",
+            "preception_encoder_core_large",
+            "preception_encoder_core_giant",
+            "preception_encoder_spatial_giant",
         ]
 
         self.encoder_configs = [{}] * len(self.encoders)
@@ -107,7 +114,11 @@ class TestEncoders:
         # get a common PCA codec
         cat_feats = torch.cat([encoder_output0, encoder_output1], dim=3)
 
-        pca_viz = get_pca_map(cat_feats.permute(0, 2, 3, 1), (image_size[0], image_size[1] * 2), return_pca_stats=True)
+        pca_viz = get_pca_map(
+            cat_feats.permute(0, 2, 3, 1),
+            (image_size[0], image_size[1] * 2),
+            return_pca_stats=True,
+        )
 
         # concatenate the input images along the width dimension
         cat_imgs = torch.cat([viz_img0, viz_img1], dim=1)

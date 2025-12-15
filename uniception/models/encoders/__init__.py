@@ -17,8 +17,19 @@ from uniception.models.encoders.cosmos import CosmosEncoder
 from uniception.models.encoders.croco import CroCoEncoder, CroCoIntermediateFeatureReturner
 from uniception.models.encoders.dense_rep_encoder import DenseRepresentationEncoder
 from uniception.models.encoders.dinov2 import DINOv2Encoder, DINOv2IntermediateFeatureReturner
+from uniception.models.encoders.dinov3 import (
+    DINOv3ConvNextEncoder,
+    DINOv3ConvNextIntermediateFeatureReturner,
+    DINOv3Encoder,
+    DINOv3IntermediateFeatureReturner,
+)
+from uniception.models.encoders.dune import DUNEEncoder, DUNEIntermediateFeatureReturner
 from uniception.models.encoders.global_rep_encoder import GlobalRepresentationEncoder
 from uniception.models.encoders.patch_embedder import PatchEmbedder
+from uniception.models.encoders.perception_encoder import (
+    PerceptionEncoder,
+    PerceptionEncoderIntermediateFeatureReturner,
+)
 from uniception.models.encoders.radio import RADIOEncoder, RADIOIntermediateFeatureReturner
 
 # Define encoder configurations
@@ -37,6 +48,21 @@ ENCODER_CONFIGS = {
         "intermediate_feature_returner_class": DINOv2IntermediateFeatureReturner,
         "supported_models": ["DINOv2", "DINOv2-Registers", "DINOv2-Depth-Anythingv2"],
     },
+    "dinov3": {
+        "class": DINOv3Encoder,
+        "intermediate_feature_returner_class": DINOv3IntermediateFeatureReturner,
+        "supported_models": ["DINOv3-ViT"],
+    },
+    "dinov3_convnext": {
+        "class": DINOv3ConvNextEncoder,
+        "intermediate_feature_returner_class": DINOv3ConvNextIntermediateFeatureReturner,
+        "supported_models": ["DINOv3-ConvNext"],
+    },
+    "dune": {
+        "class": DUNEEncoder,
+        "intermediate_feature_returner_class": DUNEIntermediateFeatureReturner,
+        "supported_models": ["DUNE"],
+    },
     "global_rep_encoder": {
         "class": GlobalRepresentationEncoder,
         "supported_models": ["Global-Representation-Encoder"],
@@ -44,6 +70,11 @@ ENCODER_CONFIGS = {
     "patch_embedder": {
         "class": PatchEmbedder,
         "supported_models": ["Patch-Embedder"],
+    },
+    "perception_encoder": {
+        "class": PerceptionEncoder,
+        "intermediate_feature_returner_class": PerceptionEncoderIntermediateFeatureReturner,
+        "supported_models": ["Perception Encoder Core", "Preception Encoder Spatial"],
     },
     "radio": {
         "class": RADIOEncoder,
@@ -199,7 +230,38 @@ def _make_encoder_test(encoder_str: str, **kwargs) -> UniCeptionEncoderBase:
         else:
             eradio_input_shape = None
         return RADIOEncoder(
-            name=encoder_str, model_version=encoder_str, eradio_input_shape=eradio_input_shape, **kwargs
+            name=encoder_str,
+            model_version=encoder_str,
+            eradio_input_shape=eradio_input_shape,
+            **kwargs,
+        )
+    elif "dinov3_convnext" in encoder_str:
+        size = encoder_str.split("_")[-1]
+        dinov3_repo_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../local/dinov3"))
+        return DINOv3ConvNextEncoder(
+            name=encoder_str,
+            dinov3_repo_dir=dinov3_repo_dir,
+            size=size,
+            weights=f"{relative_checkpoint_path}/dinov3_convnext_base_pretrain_lvd1689m-801f2ba9.pth",
+            **kwargs,
+        )
+    elif "dinov3" in encoder_str:
+        size = encoder_str.split("_")[-1]
+        dinov3_repo_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../local/dinov3"))
+        return DINOv3Encoder(
+            name=encoder_str,
+            dinov3_repo_dir=dinov3_repo_dir,
+            size=size,
+            weights=f"{relative_checkpoint_path}/dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth",
+            **kwargs,
+        )
+    elif "dune" in encoder_str:
+        return DUNEEncoder(
+            name="dune_base",
+            vit_size="base",
+            pe_image_size=448,
+            pretrained_checkpoint_path=f"{relative_checkpoint_path}/dune_vitbase14_448.pth",
+            **kwargs,
         )
     elif "cosmos" in encoder_str:
         patch_size = int(encoder_str.split("x")[-1])
@@ -208,6 +270,16 @@ def _make_encoder_test(encoder_str: str, **kwargs) -> UniCeptionEncoderBase:
             patch_size=patch_size,
             pretrained_checkpoint_path=f"{relative_checkpoint_path}/Cosmos-Tokenizer-CI{patch_size}x{patch_size}/encoder.pth",
             **kwargs,
+        )
+    elif "perception_encoder" in encoder_str:
+        pe_type = encoder_str.split("_")[2]
+        pe_size = encoder_str.split("_")[3]
+        return PerceptionEncoder(
+            name=encoder_str,
+            patch_size=16 if pe_size == "base" else 14,
+            data_norm_type="perception_encoder",
+            size=pe_size,
+            checkpoint_type=pe_type,
         )
     elif "patch_embedder" in encoder_str:
         return PatchEmbedder(name=encoder_str, **kwargs)

@@ -75,6 +75,7 @@ class Covariance2DAdaptorOutput:
     inv_covariance: Float[
         Tensor, "batch_size 3 height width"
     ]  # the channels are [0,0], [1,1], and [0,1] of the inverse covariance matrix
+    log_representation: Float[Tensor, "batch_size 3 height width"]  # c1, c2, s representation of 2D covariance
 
 
 @dataclass
