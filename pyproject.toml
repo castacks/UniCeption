@@ -38,6 +38,7 @@ dependencies = [
     "minio",
     "torchmetrics",
     "termcolor",
+    "timm",
 ]
 
 [project.urls]
