@@ -31,6 +31,7 @@ from uniception.models.encoders.perception_encoder import (
     PerceptionEncoderIntermediateFeatureReturner,
 )
 from uniception.models.encoders.radio import RADIOEncoder, RADIOIntermediateFeatureReturner
+from uniception.models.encoders.pixio import PixioEncoder
 
 # Define encoder configurations
 ENCODER_CONFIGS = {
@@ -84,6 +85,10 @@ ENCODER_CONFIGS = {
     "cosmos": {
         "class": CosmosEncoder,
         "supported_models": ["Cosmos-Tokenizer CI8x8", "Cosmos-Tokenizer CI16x16"],
+    },
+    "pixio": {
+        "class": PixioEncoder,
+        "supported_models": ["Pixio-Encoder"],
     },
     # Add other encoders here
 }
@@ -283,6 +288,8 @@ def _make_encoder_test(encoder_str: str, **kwargs) -> UniCeptionEncoderBase:
         )
     elif "patch_embedder" in encoder_str:
         return PatchEmbedder(name=encoder_str, **kwargs)
+    elif "pixio" in encoder_str:
+        return PixioEncoder(name=encoder_str, patch_size=16, data_norm_type="pixio")
     else:
         raise ValueError(f"Unknown encoder: {encoder_str}")
 
