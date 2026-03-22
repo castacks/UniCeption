@@ -48,6 +48,7 @@ class TestEncoders:
             "preception_encoder_core_large",
             "preception_encoder_core_giant",
             "preception_encoder_spatial_giant",
+            "pixio",
         ]
 
         self.encoder_configs = [{}] * len(self.encoders)
