@@ -94,11 +94,13 @@ class DUNEEncoder(UniCeptionViTEncoderBase):
                 "facebookresearch/dinov2",
                 DINO_MODELS[self.with_registers][self.version],
                 force_reload=torch_hub_force_reload,
+                pretrained=False,
             )
         except:  # Load from cache
             self.model = torch.hub.load(
                 "facebookresearch/dinov2",
                 DINO_MODELS[self.with_registers][self.version],
+                pretrained=False,
             )
 
         del (
