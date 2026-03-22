@@ -43,6 +43,7 @@ def encoders():
         "perception_encoder_spatial_giant",
         "cosmosx8",
         "patch_embedder",
+        "pixio",
     ]
 
 

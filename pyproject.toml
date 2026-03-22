@@ -53,8 +53,9 @@ dev = [
     "isort",
     "pre-commit",
     "pytest",
+    "requests",
 ]
-all = ["xformers", "black", "isort", "pre-commit", "pytest"]
+all = ["xformers", "black", "isort", "pre-commit", "pytest", "requests"]
 
 [project.scripts]
 uniception-download-checkpoints = "scripts.download_checkpoints:main"

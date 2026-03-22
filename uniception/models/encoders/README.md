@@ -32,6 +32,9 @@
     - `RADIOIntermediateFeatureReturner`
     - Supported Models: RADIO, E-RADIO
 
+- **`PixioEncoder`**
+    - Supported Models: Pixio-Encoder
+
 ### Other Encoders:
 
 - **`CosmosEncoder`**
@@ -64,6 +67,7 @@ uniception/
 │   │   ├── croco.py
 │   │   ├── dinov2.py
 │   │   ├── radio.py
+│   │   ├── pixio.py
 │   │   ├── image_normalizations.py
 │   └── ...
 │   └── libs/
