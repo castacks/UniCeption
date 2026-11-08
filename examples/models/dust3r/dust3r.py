@@ -176,7 +176,7 @@ if __name__ == "__main__":
         img1_url = (
             "https://raw.githubusercontent.com/naver/croco/d3d0ab2858d44bcad54e5bfc24f565983fbe18d9/assets/Chateau2.png"
         )
-        response = requests.get(img0_url)
+        response = requests.get(img0_url, timeout=30)
         img0 = Image.open(BytesIO(response.content))
         response = requests.get(img1_url)
         img1 = Image.open(BytesIO(response.content))
